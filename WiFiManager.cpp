@@ -1087,8 +1087,12 @@ bool WiFiManager::saveWiFiCredentials(String ssid, String pass) {
   #endif
   WiFi_enableSTA(true, storeSTAmode);
   WiFi.persistent(true);
-  // connect=false: write the new SSID/password to NVS (persistent config) only.
-  // The current STA session is already connected and will not be interrupted.
+  // The 5-parameter form of WiFi.begin() is supported on both ESP32 (arduino-esp32)
+  // and ESP8266 (arduino-esp8266): the last parameter `connect` defaults to true and
+  // is already used by wifiConnectNew() in this library.
+  // Passing connect=false saves the credentials to NVS / flash (because persistent=true)
+  // without calling esp_wifi_connect() / wifi_station_connect(), so the existing
+  // STA session is preserved.
   bool ret = WiFi.begin(ssid.c_str(), pass.c_str(), 0, NULL, false);
   WiFi.persistent(false);
   return ret;
@@ -1114,11 +1118,11 @@ String WiFiManager::getProvisioningStateStr() {
  * Maps low-level WL status codes to a human-readable error string.
  */
 String WiFiManager::getProvisioningFailureReason(uint8_t status) {
-  if(status == WL_NO_SSID_AVAIL)          return F("SSID not found");
-  if(status == WL_STATION_WRONG_PASSWORD)  return F("Wrong password");
-  if(status == WL_CONNECT_FAILED)          return F("Connection failed");
-  if(status == WL_CONNECTION_LOST)         return F("Connection lost / wrong password");
-  if(status == WL_IDLE_STATUS)             return F("Connection timed out");
+  if(status == WL_NO_SSID_AVAIL)         return F("SSID not found");
+  if(status == WL_STATION_WRONG_PASSWORD) return F("Wrong password");
+  if(status == WL_CONNECT_FAILED)        return F("Connection failed");
+  if(status == WL_CONNECTION_LOST)       return F("Connection lost / wrong password");
+  if(status == WL_IDLE_STATUS)           return F("Connection timed out");
   return F("Unknown error");
 }
 
