@@ -255,6 +255,16 @@ class WiFiManagerParameter {
         WM_DEBUG_MAX       = 5  // MAX extra dev auditing, var dumps etc (MAX+1 will print timing,mem and frag info)
     } wm_debuglevel_t;
 
+    // Provisioning connection state (AP+STA mode)
+    typedef enum {
+        WM_PROV_IDLE       = 0, // no active provisioning
+        WM_PROV_SCANNING   = 1, // scanning for networks
+        WM_PROV_CONNECTING = 2, // STA connection in progress
+        WM_PROV_CONNECTED  = 3, // STA connected, waiting for AP shutdown delay
+        WM_PROV_FAILED     = 4, // STA connection failed
+        WM_PROV_RETRYING   = 5  // retrying STA connection
+    } wm_provstate_t;
+
 class WiFiManager
 {
   public:
@@ -514,6 +524,23 @@ class WiFiManager
     // get hostname helper
     String        getWiFiHostname();
 
+    // --- AP+STA Provisioning options ---
+
+    // if true, keep AP active while STA connection attempt is in progress (default false)
+    void          setKeepAPDuringSTAConnect(bool keep);
+
+    // set the delay in ms before the AP is shut down after a successful STA connection (default 10000)
+    void          setAPShutdownDelay(unsigned long ms);
+
+    // if true, map low-level errors to descriptive messages in /status JSON (default false)
+    void          setDetailedFailureReasons(bool enable);
+
+    // if true (default), register OS captive-portal probe handlers (/generate_204, /hotspot-detect.html, /ncsi.txt)
+    void          setCaptivePortalCompatibility(bool enable);
+
+    // get the current provisioning state (see wm_provstate_t)
+    wm_provstate_t getProvisioningState();
+
 
     std::unique_ptr<DNSServer>        dnsServer;
 
@@ -580,6 +607,19 @@ class WiFiManager
                                                    // on some conn failure modes will add delays and many retries to work around esp and ap bugs, ie, anti de-auth protections
                                                    // https://github.com/tzapu/WiFiManager/issues/1067
     bool          _allowExit              = true; // allow exit in nonblocking, else user exit/abort calls will be ignored including cptimeout
+
+    // AP+STA provisioning flow options
+    bool          _keepAPDuringSTAConnect = false; // keep AP running while STA connection is in progress
+    unsigned long _apShutdownDelayMs      = 10000; // ms to keep AP alive after successful STA connect before shutting down
+    bool          _detailedFailureReasons = false; // map low-level errors to human-readable strings in /status
+    bool          _captivePortalCompat    = true;  // register OS captive portal probe handlers (generate_204 etc.)
+
+    // provisioning state machine (used when _keepAPDuringSTAConnect is true)
+    wm_provstate_t _provisioningState     = WM_PROV_IDLE;
+    String         _provisioningError     = "";
+    bool           _provisioningConnecting = false;  // true while non-blocking STA connect is running
+    unsigned long  _apShutdownDeadline    = 0;       // millis() deadline for AP shutdown
+    bool           _apShutdownPending     = false;   // true when waiting for AP shutdown delay
 
     #ifdef ESP32
     wifi_event_id_t wm_event_id           = 0;
@@ -680,6 +720,12 @@ protected:
     uint8_t       waitForConnectResult(uint32_t timeout);
     void          updateConxResult(uint8_t status);
 
+    // provisioning state machine helpers
+    uint8_t       checkProvisioningState();                    // poll STA status; returns WL_IDLE_STATUS or WL_CONNECTED
+    bool          saveWiFiCredentials(String ssid, String pass); // persist credentials only on success
+    String        getProvisioningStateStr();                   // convert _provisioningState to string for /status JSON
+    String        getProvisioningFailureReason(uint8_t status); // map WL status to human-readable string
+
     // webserver handlers
 public:
     void          handleNotFound();
@@ -690,6 +736,11 @@ protected:
     void          handleWifiSave();
     void          handleInfo();
     void          handleReset();
+
+    // OS captive portal probe handlers
+    void          handleCaptivePortal204();     // Android  /generate_204
+    void          handleCaptivePortalHotspot(); // iOS/macOS /hotspot-detect.html
+    void          handleCaptivePortalNcsi();    // Windows  /ncsi.txt
 
     void          handleExit();
     void          handleClose();

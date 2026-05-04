@@ -74,6 +74,34 @@ const char HTTP_FORM_PARAM[]       PROGMEM = "<br/><input id='{i}' name='{n}' ma
 const char HTTP_SCAN_LINK[]        PROGMEM = "<br/><form action='/wifi?refresh=1' method='POST'><button name='refresh' value='1'>Refresh</button></form>";
 const char HTTP_SAVED[]            PROGMEM = "<div class='msg'>Saving Credentials<br/>Trying to connect ESP to network.<br />If it fails reconnect to AP to try again</div>";
 const char HTTP_PARAMSAVED[]       PROGMEM = "<div class='msg S'>Saved<br/></div>";
+// Provisioning mode save page: stays open and polls /status with JavaScript
+const char HTTP_SAVED_PROVISIONING[] PROGMEM =
+  "<div class='msg' id='wm-prov-msg'>Connecting&hellip;<br/><small id='wm-prov-status'>Please wait</small></div>"
+  "<script>"
+  "function wmPoll(){"
+    "fetch('/status').then(function(r){return r.json();}).then(function(d){"
+      "var m=document.getElementById('wm-prov-msg');"
+      "var s=document.getElementById('wm-prov-status');"
+      "if(d.state==='connected'){"
+        "m.className='msg S';"
+        "m.innerHTML='<strong>Connected!</strong><br/><small>IP: '+d.ip+(d.hostname?'&nbsp;&nbsp;'+d.hostname:'')+'</small>';"
+        "if(d.apShutdownIn){s.textContent='AP shuts down in '+Math.ceil(d.apShutdownIn/1000)+'s';}"
+        "else{s.textContent='Provisioning complete';}"
+      "}else if(d.state==='failed'){"
+        "m.className='msg D';"
+        "m.innerHTML='<strong>Connection failed</strong><br/><small>'+(d.error||'Please try again')+'</small>';"
+        "s.innerHTML='<a href=\"/wifi\">Try again</a>';"
+      "}else if(d.state==='connecting'){"
+        "s.textContent='Connecting\u2026 ('+new Date().toLocaleTimeString()+')';"
+        "setTimeout(wmPoll,1500);"
+      "}else{"
+        "s.textContent=d.state;"
+        "setTimeout(wmPoll,2000);"
+      "}"
+    "}).catch(function(){setTimeout(wmPoll,3000);});"
+  "}"
+  "setTimeout(wmPoll,800);"
+  "</script>";
 const char HTTP_END[]              PROGMEM = "</div></body></html>";
 const char HTTP_ERASEBTN[]         PROGMEM = "<br/><form action='/erase' method='get'><button class='D'>Erase WiFi config</button></form>";
 const char HTTP_UPDATEBTN[]        PROGMEM = "<br/><form action='/update' method='get'><button>Update</button></form>";

@@ -657,6 +657,18 @@ void WiFiManager::setupHTTPServer(){
   
   server->on(WM_G(R_update), std::bind(&WiFiManager::handleUpdate, this));
   server->on(WM_G(R_updatedone), HTTP_POST, std::bind(&WiFiManager::handleUpdateDone, this), std::bind(&WiFiManager::handleUpdating, this));
+
+  // OS captive portal compatibility probes – these let Android/iOS/Windows automatically
+  // pop up the captive-portal UI when a user connects to the SoftAP.
+  // HTTPS is NOT intercepted; only plain HTTP probes are handled.
+  if(_captivePortalCompat) {
+    server->on(F("/generate_204"),        std::bind(&WiFiManager::handleCaptivePortal204,    this)); // Android
+    server->on(F("/hotspot-detect.html"), std::bind(&WiFiManager::handleCaptivePortalHotspot, this)); // iOS / macOS
+    server->on(F("/ncsi.txt"),            std::bind(&WiFiManager::handleCaptivePortalNcsi,   this)); // Windows
+    server->on(F("/connecttest.txt"),     std::bind(&WiFiManager::handleCaptivePortalNcsi,   this)); // Windows 10
+    server->on(F("/redirect"),            std::bind(&WiFiManager::handleCaptivePortalNcsi,   this)); // Windows
+    server->on(F("/success.txt"),         std::bind(&WiFiManager::handleCaptivePortal204,    this)); // Amazon Fire OS
+  }
   
   server->begin(); // Web server start
   #ifdef WM_DEBUG_LEVEL
@@ -717,7 +729,8 @@ boolean  WiFiManager::startConfigPortal(char const *apName, char const *apPasswo
   if(!validApPassword()) return false;
   
   // HANDLE issues with STA connections, shutdown sta if not connected, or else this will hang channel scanning and softap will not respond
-  if(_disableSTA || (!WiFi.isConnected() && _disableSTAConn)){
+  // When _keepAPDuringSTAConnect is set we intentionally run AP+STA, so we keep STA enabled.
+  if(!_keepAPDuringSTAConnect && (_disableSTA || (!WiFi.isConnected() && _disableSTAConn))){
     // this fixes most ap problems, however, simply doing mode(WIFI_AP) does not work if sta connection is hanging, must `wifi_station_disconnect` 
     #ifdef WM_DISCONWORKAROUND
       WiFi.mode(WIFI_AP_STA);
@@ -728,9 +741,22 @@ boolean  WiFiManager::startConfigPortal(char const *apName, char const *apPasswo
     DEBUG_WM(WM_DEBUG_VERBOSE,F("Disabling STA"));
     #endif
   }
+  else if(_keepAPDuringSTAConnect) {
+    // Ensure STA interface is up for AP+STA provisioning mode
+    WiFi_enableSTA(true);
+    #ifdef WM_DEBUG_LEVEL
+    DEBUG_WM(WM_DEBUG_VERBOSE,F("Keeping STA enabled (AP+STA provisioning mode)"));
+    #endif
+  }
   else {
     // WiFi_enableSTA(true);
   }
+
+  // reset provisioning state for a fresh portal session
+  _provisioningState     = WM_PROV_IDLE;
+  _provisioningError     = "";
+  _provisioningConnecting = false;
+  _apShutdownPending     = false;
 
   // init configportal globals to known states
   configPortalActive = true;
@@ -871,6 +897,17 @@ uint8_t WiFiManager::processConfigPortal(){
     //HTTP handler
     server->handleClient();
 
+    // ---- AP+STA provisioning state machine ----
+    // When _keepAPDuringSTAConnect is true the connection is started
+    // non-blocking from handleWifiSave(). checkProvisioningState() advances
+    // the state machine on every call and returns WL_CONNECTED once the AP
+    // has been torn down after the shutdown delay.
+    if(_keepAPDuringSTAConnect && (_provisioningConnecting || _apShutdownPending)) {
+      uint8_t provResult = checkProvisioningState();
+      if(provResult != WL_IDLE_STATUS) return provResult;
+      return WL_IDLE_STATUS;
+    }
+
     // Waiting for save...
     if(connect) {
       connect = false;
@@ -947,6 +984,197 @@ uint8_t WiFiManager::processConfigPortal(){
     }
 
     return WL_IDLE_STATUS;
+}
+
+// ---------------------------------------------------------------------------
+// AP+STA Provisioning state machine
+// ---------------------------------------------------------------------------
+
+/**
+ * checkProvisioningState
+ * Called from processConfigPortal() when _keepAPDuringSTAConnect is true.
+ * Polls the STA connection status and drives the provisioning state machine:
+ *   CONNECTING → CONNECTED (saves credentials, starts AP-shutdown timer)
+ *   CONNECTING → FAILED    (keeps portal open so the user can retry)
+ *   CONNECTED  → shutdown  (once the AP-shutdown delay has elapsed)
+ *
+ * @return WL_IDLE_STATUS while still in progress, WL_CONNECTED when the AP
+ *         has been torn down after a successful connection.
+ */
+uint8_t WiFiManager::checkProvisioningState() {
+  // ---- AP shutdown timer expired after successful connect ----
+  if(_apShutdownPending) {
+    if(millis() >= _apShutdownDeadline) {
+      _apShutdownPending = false;
+      #ifdef WM_DEBUG_LEVEL
+      DEBUG_WM(WM_DEBUG_VERBOSE,F("Provisioning: AP shutdown delay elapsed, shutting down AP"));
+      #endif
+      shutdownConfigPortal(); // stops AP, sets configPortalActive = false
+      return WL_CONNECTED;    // signal the blocking loop to exit with result=true
+    }
+    return WL_IDLE_STATUS; // still waiting
+  }
+
+  if(!_provisioningConnecting) return WL_IDLE_STATUS;
+
+  uint8_t status = WiFi.status();
+
+  // Default connect-timeout is _connectTimeout; fall back to 30 s if not set
+  unsigned long timeout = (_connectTimeout > 0) ? _connectTimeout : 30000UL;
+  bool timedOut = (millis() - _startconn) > timeout;
+
+  if(status == WL_CONNECTED) {
+    #ifdef WM_DEBUG_LEVEL
+    DEBUG_WM(WM_DEBUG_VERBOSE,F("Provisioning: STA connected, IP:"),WiFi.localIP());
+    #endif
+    _provisioningState     = WM_PROV_CONNECTED;
+    _provisioningConnecting = false;
+    updateConxResult(status);
+
+    // Save credentials NOW that the connection is confirmed working
+    saveWiFiCredentials(_ssid, _pass);
+
+    // Fire the save callback
+    if(_savewificallback != NULL) {
+      #ifdef WM_DEBUG_LEVEL
+      DEBUG_WM(WM_DEBUG_VERBOSE,F("[CB] _savewificallback calling"));
+      #endif
+      _savewificallback(); // @CALLBACK
+    }
+
+    // Start the AP-shutdown delay (or shut down immediately if delay == 0)
+    if(_apShutdownDelayMs > 0) {
+      _apShutdownDeadline = millis() + _apShutdownDelayMs;
+      _apShutdownPending  = true;
+      #ifdef WM_DEBUG_LEVEL
+      DEBUG_WM(WM_DEBUG_VERBOSE,F("Provisioning: AP will shut down in ms:"),_apShutdownDelayMs);
+      #endif
+    } else {
+      shutdownConfigPortal();
+      return WL_CONNECTED;
+    }
+
+  } else if(status == WL_NO_SSID_AVAIL    ||
+            status == WL_CONNECT_FAILED    ||
+            status == WL_CONNECTION_LOST   ||
+            status == WL_STATION_WRONG_PASSWORD ||
+            timedOut) {
+
+    #ifdef WM_DEBUG_LEVEL
+    DEBUG_WM(WM_DEBUG_ERROR,F("Provisioning: STA connection failed, status:"),getWLStatusString(status));
+    #endif
+    _provisioningState     = WM_PROV_FAILED;
+    _provisioningConnecting = false;
+    updateConxResult(status);
+    _provisioningError = _detailedFailureReasons
+                           ? getProvisioningFailureReason(timedOut ? WL_IDLE_STATUS : status)
+                           : "";
+    // Keep AP + portal open so the user can retry
+  }
+
+  return WL_IDLE_STATUS;
+}
+
+/**
+ * saveWiFiCredentials
+ * Persist SSID / password to flash using WiFi.begin(connect=false) so that
+ * the credential store is updated without starting a new connection attempt
+ * (the STA is already connected at this point).
+ */
+bool WiFiManager::saveWiFiCredentials(String ssid, String pass) {
+  #ifdef WM_DEBUG_LEVEL
+  DEBUG_WM(WM_DEBUG_VERBOSE,F("Saving WiFi credentials to persistent storage"));
+  #endif
+  WiFi_enableSTA(true, storeSTAmode);
+  WiFi.persistent(true);
+  // connect=false: update NVS config only, do not disconnect the current session
+  bool ret = WiFi.begin(ssid.c_str(), pass.c_str(), 0, NULL, false);
+  WiFi.persistent(false);
+  return ret;
+}
+
+/**
+ * getProvisioningStateStr
+ * Returns the current provisioning state as a JSON-safe string.
+ */
+String WiFiManager::getProvisioningStateStr() {
+  switch(_provisioningState) {
+    case WM_PROV_SCANNING:   return F("scanning");
+    case WM_PROV_CONNECTING: return F("connecting");
+    case WM_PROV_CONNECTED:  return F("connected");
+    case WM_PROV_FAILED:     return F("failed");
+    case WM_PROV_RETRYING:   return F("retrying");
+    default:                 return F("idle");
+  }
+}
+
+/**
+ * getProvisioningFailureReason
+ * Maps low-level WL status codes to a human-readable error string.
+ */
+String WiFiManager::getProvisioningFailureReason(uint8_t status) {
+  if(status == WL_NO_SSID_AVAIL)           return F("SSID not found");
+  if(status == WL_STATION_WRONG_PASSWORD)   return F("Wrong password");
+  if(status == WL_CONNECT_FAILED)           return F("Connection failed");
+  if(status == WL_CONNECTION_LOST)          return F("Connection lost / wrong password");
+  if(status == WL_IDLE_STATUS)              return F("Connection timed out");
+  return F("Unknown error");
+}
+
+// ---------------------------------------------------------------------------
+// OS captive portal probe handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * handleCaptivePortal204
+ * Android: GET /generate_204  – Android expects a 204 response on a real
+ * internet connection.  When in captive portal mode we redirect to the portal
+ * so Android pops up the "Sign in to network" notification.
+ * Amazon Fire OS: GET /success.txt (same treatment).
+ */
+void WiFiManager::handleCaptivePortal204() {
+  if(!configPortalActive) {
+    server->send(204, FPSTR(HTTP_HEAD_CT2), "");
+    return;
+  }
+  String loc = (String)F("http://") + toStringIp(WiFi.softAPIP());
+  server->sendHeader(F("Location"), loc, true);
+  server->send(302, FPSTR(HTTP_HEAD_CT2), "");
+  server->client().stop();
+}
+
+/**
+ * handleCaptivePortalHotspot
+ * iOS / macOS: GET /hotspot-detect.html – Apple expects a specific response
+ * body.  We redirect to the portal instead so the Captive Network Assistant opens.
+ */
+void WiFiManager::handleCaptivePortalHotspot() {
+  if(!configPortalActive) {
+    server->send(200, FPSTR(HTTP_HEAD_CT),
+      F("<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"));
+    return;
+  }
+  String loc = (String)F("http://") + toStringIp(WiFi.softAPIP());
+  server->sendHeader(F("Location"), loc, true);
+  server->send(302, FPSTR(HTTP_HEAD_CT2), "");
+  server->client().stop();
+}
+
+/**
+ * handleCaptivePortalNcsi
+ * Windows: GET /ncsi.txt, /connecttest.txt, /redirect – NCSI (Network
+ * Connectivity Status Indicator) probes.  Redirect to the portal so Windows
+ * displays the "Additional sign-in info required" notification.
+ */
+void WiFiManager::handleCaptivePortalNcsi() {
+  if(!configPortalActive) {
+    server->send(200, FPSTR(HTTP_HEAD_CT2), F("Microsoft NCSI"));
+    return;
+  }
+  String loc = (String)F("http://") + toStringIp(WiFi.softAPIP());
+  server->sendHeader(F("Location"), loc, true);
+  server->send(302, FPSTR(HTTP_HEAD_CT2), "");
+  server->client().stop();
 }
 
 /**
@@ -1808,12 +2036,33 @@ void WiFiManager::handleWiFiStatus(){
   DEBUG_WM(WM_DEBUG_VERBOSE,F("<- HTTP WiFi status "));
   #endif
   handleRequest();
-  String page;
-  // String page = "{\"result\":true,\"count\":1}";
-  #ifdef WM_JSTEST
-    page = FPSTR(HTTP_JS);
+
+  // Build a JSON response with the current provisioning / connection state.
+  // This endpoint is polled by the provisioning UI page after a save.
+  String json = F("{\"state\":\"");
+  json += getProvisioningStateStr();
+  json += F("\",\"ssid\":\"");
+  json += htmlEntities(WiFi_SSID());
+  json += F("\",\"ip\":\"");
+  if(WiFi.status() == WL_CONNECTED) json += WiFi.localIP().toString();
+  json += F("\",\"error\":\"");
+  json += _provisioningError;
+  json += F("\"");
+  if(_apShutdownPending && _apShutdownDeadline > millis()) {
+    json += F(",\"apShutdownIn\":");
+    json += String((long)(_apShutdownDeadline - millis()));
+  }
+  #ifdef WM_MDNS
+  if(_hostname != "") {
+    json += F(",\"hostname\":\"");
+    json += _hostname + F(".local");
+    json += F("\"");
+  }
   #endif
-  HTTPSend(page);
+  json += F("}");
+
+  server->sendHeader(FPSTR(HTTP_HEAD_CORS), FPSTR(HTTP_HEAD_CORS_ALLOW_ALL));
+  server->send(200, F("application/json"), json);
 }
 
 /** 
@@ -1889,6 +2138,44 @@ void WiFiManager::handleWifiSave() {
   }
 
   if(_paramsInWifi) doParamSave();
+
+  // ---- AP+STA provisioning mode: start a non-blocking STA connection ----
+  // When _keepAPDuringSTAConnect is true we start the WiFi connection
+  // immediately without blocking, keep the AP + web server running, and
+  // let the frontend poll /status for the result.
+  if(_keepAPDuringSTAConnect && _ssid != "") {
+    #ifdef WM_DEBUG_LEVEL
+    DEBUG_WM(WM_DEBUG_VERBOSE,F("Provisioning: starting non-blocking STA connect to:"),_ssid);
+    #endif
+    // Reset provisioning state
+    _provisioningState      = WM_PROV_CONNECTING;
+    _provisioningConnecting = true;
+    _provisioningError      = "";
+    _apShutdownPending      = false;
+    _startconn              = millis();
+
+    // Apply static IP config if set
+    setSTAConfig();
+
+    // Start STA connection without persistent-save (credentials are saved on
+    // success by saveWiFiCredentials() inside checkProvisioningState()).
+    WiFi_enableSTA(true, storeSTAmode);
+    WiFi.persistent(false);
+    WiFi.begin(_ssid.c_str(), _pass.c_str());
+    WiFi.persistent(false);
+
+    // Return the provisioning status page which polls /status via JS
+    String page = getHTTPHead(FPSTR(S_titlewifisaved), FPSTR(C_wifi));
+    page += FPSTR(HTTP_SAVED_PROVISIONING);
+    if(_showBack) page += FPSTR(HTTP_BACKBTN);
+    page += getHTTPEnd();
+    server->sendHeader(FPSTR(HTTP_HEAD_CORS), FPSTR(HTTP_HEAD_CORS_ALLOW_ALL));
+    HTTPSend(page);
+    #ifdef WM_DEBUG_LEVEL
+    DEBUG_WM(WM_DEBUG_DEV,F("Sent provisioning save page"));
+    #endif
+    return; // do NOT set connect=true; state machine in processConfigPortal handles the rest
+  }
 
   String page;
 
@@ -3253,6 +3540,59 @@ void WiFiManager::setParamsPage(bool enable){
 }
 
 // GETTERS
+
+// --- AP+STA Provisioning setters/getters ---
+
+/**
+ * setKeepAPDuringSTAConnect
+ * When true the config portal runs in AP+STA mode: the SoftAP remains active
+ * during and after the STA connection attempt.  Credentials are saved only on
+ * a successful connection.  The AP is shut down after _apShutdownDelayMs ms.
+ * Default: false (legacy blocking behaviour unchanged).
+ */
+void WiFiManager::setKeepAPDuringSTAConnect(bool keep) {
+  _keepAPDuringSTAConnect = keep;
+}
+
+/**
+ * setAPShutdownDelay
+ * Set the number of milliseconds to keep the SoftAP running after a
+ * successful STA connection before it is shut down (default: 10 000 ms).
+ * Set to 0 to shut down immediately on connect.
+ */
+void WiFiManager::setAPShutdownDelay(unsigned long ms) {
+  _apShutdownDelayMs = ms;
+}
+
+/**
+ * setDetailedFailureReasons
+ * When true the /status JSON endpoint maps low-level WL status codes to
+ * human-readable strings (e.g. "Wrong password", "SSID not found").
+ * Default: false.
+ */
+void WiFiManager::setDetailedFailureReasons(bool enable) {
+  _detailedFailureReasons = enable;
+}
+
+/**
+ * setCaptivePortalCompatibility
+ * When true (default) the portal registers extra HTTP handlers for the OS
+ * captive portal probes used by Android (/generate_204), iOS/macOS
+ * (/hotspot-detect.html) and Windows (/ncsi.txt, /connecttest.txt).
+ * These redirects cause the OS to automatically open the captive-portal UI.
+ * HTTPS traffic is never intercepted.
+ */
+void WiFiManager::setCaptivePortalCompatibility(bool enable) {
+  _captivePortalCompat = enable;
+}
+
+/**
+ * getProvisioningState
+ * Returns the current provisioning state as a wm_provstate_t enum value.
+ */
+wm_provstate_t WiFiManager::getProvisioningState() {
+  return _provisioningState;
+}
 
 /**
  * get config portal AP SSID
