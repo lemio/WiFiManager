@@ -1125,7 +1125,7 @@ String WiFiManager::getProvisioningStateStr() {
  * Maps low-level WL status codes to a human-readable error string.
  */
 String WiFiManager::getProvisioningFailureReason(uint8_t status) {
-  if(status == WL_NO_SSID_AVAIL)         return F("SSID not found");
+  if(status == WL_NO_SSID_AVAIL)         return F("Network not found");
   if(status == WL_STATION_WRONG_PASSWORD) return F("Wrong password");
   if(status == WL_CONNECT_FAILED)        return F("Connection failed");
   if(status == WL_CONNECTION_LOST)       return F("Connection lost / wrong password");
@@ -2144,6 +2144,23 @@ void WiFiManager::handleWifiSave() {
     #endif    
   }
 
+  // --- Server-side input validation ---
+  // WPA2-Personal PSK: 8–63 printable ASCII characters; empty = open network.
+  // The client-side HTML pattern enforces the same rule, but we guard here
+  // too so a raw HTTP POST cannot bypass it.
+  if (_pass.length() > 0 && (_pass.length() < 8 || _pass.length() > 63)) {
+    #ifdef WM_DEBUG_LEVEL
+    DEBUG_WM(WM_DEBUG_ERROR,F("[ERROR] WiFi password length invalid:"),_pass.length());
+    #endif
+    String page = getHTTPHead(FPSTR(S_titlewifisaved), FPSTR(C_wifi));
+    page += F("<div class='msg D'><strong>Invalid password</strong><br/>"
+              "WiFi password must be between 8 and 63 characters.</div>"
+              "<hr><br/><form action='/wifi' method='get'><button>Back</button></form>");
+    page += getHTTPEnd();
+    server->sendHeader(F("Cache-Control"), F("no-cache, no-store, must-revalidate"));
+    HTTPSend(page);
+    return;
+  }
   #ifdef WM_DEBUG_LEVEL
   String requestinfo = "SERVER_REQUEST\n----------------\n";
   requestinfo += "URI: ";
@@ -3624,7 +3641,7 @@ void WiFiManager::setAPShutdownDelay(unsigned long ms) {
 /**
  * setDetailedFailureReasons
  * When true the /status JSON endpoint maps low-level WL status codes to
- * human-readable strings (e.g. "Wrong password", "SSID not found").
+ * human-readable strings (e.g. "Wrong password", "Network not found").
  * Default: false.
  */
 void WiFiManager::setDetailedFailureReasons(bool enable) {

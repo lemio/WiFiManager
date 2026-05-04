@@ -63,7 +63,7 @@ const char HTTP_ITEM[]             PROGMEM = "<div><a href='#p' onclick='c(this)
 // const char HTTP_ITEM[]            PROGMEM = "<div><a href='#p' onclick='c(this)'>{v}</a> {R} {r}% {q} {e}</div>"; // test all tokens
 
 const char HTTP_FORM_START[]       PROGMEM = "<form method='POST' action='{v}'>";
-const char HTTP_FORM_WIFI[]        PROGMEM = "<label for='s'>Network Name</label><input id='s' name='s' maxlength='32' autocorrect='off' autocapitalize='none' placeholder='{v}'><br/><label for='p'>Password</label><input id='p' name='p' maxlength='64' type='password' placeholder='{p}'><input type='checkbox' id='showpass' onclick='f()'> <label for='showpass'>Show Password</label><br/>";
+const char HTTP_FORM_WIFI[]        PROGMEM = "<label for='s'>Network Name</label><input id='s' name='s' maxlength='32' autocorrect='off' autocapitalize='none' placeholder='{v}' pattern='^[^!#;+\\/\\[\\]\"\\s].{0,31}$' title='Network name (1-32 chars, first character cannot be a space or !#;+/[]\")'><br/><label for='p'>Password</label><input id='p' name='p' maxlength='64' type='password' placeholder='{p}' pattern='^.{8,63}$' title='WiFi password must be between 8 and 63 characters (leave empty for open networks).'><input type='checkbox' id='showpass' onclick='f()'> <label for='showpass'>Show Password</label><br/>";
 const char HTTP_FORM_WIFI_END[]    PROGMEM = "";
 const char HTTP_FORM_STATIC_HEAD[] PROGMEM = "<hr><br/>";
 const char HTTP_FORM_END[]         PROGMEM = "<br/><br/><button type='submit'>Save</button></form>";
@@ -90,7 +90,7 @@ const char HTTP_SAVED_PROVISIONING[] PROGMEM =
         "var reason=d.error||'Check your settings and try again.';"
         "var ssidTxt=d.ssid?'<b>'+d.ssid+'</b>':'the network';"
         "m.className='msg D';"
-        "m.innerHTML='<strong>Could not connect</strong><br/><small>'+reason+'<br/>Network: '+ssidTxt+'</small><br/><a href=\"/wifi\">Change settings &amp; try again</a>';"
+        "m.innerHTML='<strong>Could not connect</strong><br/><small>'+reason+'<br/>Network: '+ssidTxt+'</small><br/><a href=\"/wifi\" aria-label=\"Go back to WiFi settings and try again\">Change settings &amp; try again</a>';"
       "}else if(d.state==='connecting'){"
         "m.className='msg';"
         "m.innerHTML='<span class=\"sp\"></span>&nbsp;Connecting to <b>'+d.ssid+'</b>&hellip;<br/><small id=\"wm-prov-status\">'+new Date().toLocaleTimeString()+'</small>';"
