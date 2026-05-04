@@ -627,7 +627,7 @@ class WiFiManager
     #endif
 
     #ifndef WL_STATION_WRONG_PASSWORD
-    uint8_t WL_STATION_WRONG_PASSWORD     = 7; // @kludge define a WL status for wrong password
+    static constexpr uint8_t WL_STATION_WRONG_PASSWORD = 7; // @kludge define a WL status for wrong password
     #endif
 
     // parameter options
