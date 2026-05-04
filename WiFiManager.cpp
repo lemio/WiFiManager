@@ -1024,11 +1024,11 @@ uint8_t WiFiManager::checkProvisioningState() {
   unsigned long elapsed = millis() - _startconn;
   bool timedOut = elapsed > timeout;
 
-  // 2-second grace period: after calling WiFi.begin() the radio briefly
-  // retains the previous WL_CONNECT_FAILED / WL_STATION_WRONG_PASSWORD status
-  // from the last attempt.  Ignore failure statuses until the radio has had
-  // time to reset so a retry does not instantly re-fail.
-  bool gracePeriod = elapsed < 2000UL;
+  // Grace period after calling WiFi.begin(): the radio briefly retains the
+  // previous failure status from the last attempt.  Ignore failure codes
+  // until the radio has had time to reset so a retry does not instantly re-fail.
+  static const unsigned long PROV_GRACE_PERIOD_MS = 2000UL;
+  bool gracePeriod = elapsed < PROV_GRACE_PERIOD_MS;
 
   if(status == WL_CONNECTED) {
     #ifdef WM_DEBUG_LEVEL
@@ -2148,9 +2148,10 @@ void WiFiManager::handleWifiSave() {
   // WPA2-Personal PSK: 8–63 printable ASCII characters; empty = open network.
   // The client-side HTML pattern enforces the same rule, but we guard here
   // too so a raw HTTP POST cannot bypass it.
-  if (_pass.length() > 0 && (_pass.length() < 8 || _pass.length() > 63)) {
+  size_t passLen = _pass.length();
+  if (passLen > 0 && (passLen < 8 || passLen > 63)) {
     #ifdef WM_DEBUG_LEVEL
-    DEBUG_WM(WM_DEBUG_ERROR,F("[ERROR] WiFi password length invalid:"),_pass.length());
+    DEBUG_WM(WM_DEBUG_ERROR,F("[ERROR] WiFi password length invalid:"),passLen);
     #endif
     String page = getHTTPHead(FPSTR(S_titlewifisaved), FPSTR(C_wifi));
     page += F("<div class='msg D'><strong>Invalid password</strong><br/>"
