@@ -2096,15 +2096,16 @@ void WiFiManager::handleWiFiStatus(){
 
   // Map last connection result to a short machine-readable string so the
   // frontend can show user-friendly error messages.
+  // Use if/else instead of switch: WL_STATION_WRONG_PASSWORD is not a
+  // compile-time constant on some ESP8266 toolchains, which causes a
+  // "use of 'this' in a constant expression" error with switch/case.
   json += F(",\"lastResult\":\"");
-  switch(_lastconxresult) {
-    case WL_STATION_WRONG_PASSWORD: json += F("wrong_password"); break;
-    case WL_NO_SSID_AVAIL:          json += F("not_found");      break;
-    case WL_CONNECT_FAILED:
-    case WL_CONNECTION_LOST:        json += F("failed");         break;
-    case WL_CONNECTED:              json += F("connected");      break;
-    default:                        break; // WL_IDLE_STATUS – no attempt yet
-  }
+  if(_lastconxresult == WL_STATION_WRONG_PASSWORD)    json += F("wrong_password");
+  else if(_lastconxresult == WL_NO_SSID_AVAIL)        json += F("not_found");
+  else if(_lastconxresult == WL_CONNECT_FAILED ||
+          _lastconxresult == WL_CONNECTION_LOST)       json += F("failed");
+  else if(_lastconxresult == WL_CONNECTED)             json += F("connected");
+  // else WL_IDLE_STATUS: no previous attempt, leave value empty
   json += F("\"");
 
   if(_apShutdownPending && _apShutdownDeadline > millis()) {
