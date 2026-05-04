@@ -1021,7 +1021,14 @@ uint8_t WiFiManager::checkProvisioningState() {
 
   // Default connect-timeout is _connectTimeout; fall back to 30 s if not set
   unsigned long timeout = (_connectTimeout > 0) ? _connectTimeout : 30000UL;
-  bool timedOut = (millis() - _startconn) > timeout;
+  unsigned long elapsed = millis() - _startconn;
+  bool timedOut = elapsed > timeout;
+
+  // 2-second grace period: after calling WiFi.begin() the radio briefly
+  // retains the previous WL_CONNECT_FAILED / WL_STATION_WRONG_PASSWORD status
+  // from the last attempt.  Ignore failure statuses until the radio has had
+  // time to reset so a retry does not instantly re-fail.
+  bool gracePeriod = elapsed < 2000UL;
 
   if(status == WL_CONNECTED) {
     #ifdef WM_DEBUG_LEVEL
@@ -1054,11 +1061,12 @@ uint8_t WiFiManager::checkProvisioningState() {
       return WL_CONNECTED;
     }
 
-  } else if(status == WL_NO_SSID_AVAIL    ||
+  } else if(!gracePeriod && (
+            status == WL_NO_SSID_AVAIL    ||
             status == WL_CONNECT_FAILED    ||
             status == WL_CONNECTION_LOST   ||
             status == WL_STATION_WRONG_PASSWORD ||
-            timedOut) {
+            timedOut)) {
 
     #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(WM_DEBUG_ERROR,F("Provisioning: STA connection failed, status:"),getWLStatusString(status));
@@ -1066,9 +1074,8 @@ uint8_t WiFiManager::checkProvisioningState() {
     _provisioningState     = WM_PROV_FAILED;
     _provisioningConnecting = false;
     updateConxResult(status);
-    _provisioningError = _detailedFailureReasons
-                           ? getProvisioningFailureReason(timedOut ? WL_IDLE_STATUS : status)
-                           : "";
+    // Always populate the error so the frontend can show a helpful message.
+    _provisioningError = getProvisioningFailureReason(timedOut ? WL_IDLE_STATUS : status);
     // Keep AP + portal open so the user can retry
   }
 
@@ -1579,6 +1586,16 @@ void WiFiManager::handleRoot() {
   DEBUG_WM(WM_DEBUG_VERBOSE,F("<- HTTP Root"));
   #endif
   if (captivePortal()) return; // If captive portal redirect instead of displaying the page
+
+  // When the setup portal is active, go directly to the WiFi config page
+  // so users land on the useful page immediately instead of a menu.
+  if(configPortalActive) {
+    server->sendHeader(F("Location"), F("/wifi"), true);
+    server->send(302, FPSTR(HTTP_HEAD_CT2), "");
+    server->client().stop();
+    return;
+  }
+
   handleRequest();
   String page = getHTTPHead(_title, FPSTR(C_root)); // @token options @todo replace options with title
   String str  = FPSTR(HTTP_ROOT_MAIN); // @todo custom title
@@ -1606,6 +1623,10 @@ void WiFiManager::handleWifi(boolean scan) {
   #endif
   handleRequest();
   String page = getHTTPHead(FPSTR(S_titlewifi), FPSTR(C_wifi)); // @token titlewifi
+
+  // Status banner at the TOP of the page so users see connection state immediately
+  reportStatus(page);
+
   if (scan) {
     #ifdef WM_DEBUG_LEVEL
     // DEBUG_WM(WM_DEBUG_DEV,"refresh flag:",server->hasArg(F("refresh")));
@@ -1643,7 +1664,13 @@ void WiFiManager::handleWifi(boolean scan) {
   page += FPSTR(HTTP_FORM_END);
   page += FPSTR(HTTP_SCAN_LINK);
   if(_showBack) page += FPSTR(HTTP_BACKBTN);
-  reportStatus(page);
+
+  // Bottom navigation bar
+  page += FPSTR(HTTP_NAV_BOTTOM);
+
+  // Live status polling script – updates the status banner dynamically
+  page += FPSTR(HTTP_STATUS_LIVE_SCRIPT);
+
   page += getHTTPEnd();
 
   HTTPSend(page);
@@ -2043,16 +2070,43 @@ void WiFiManager::handleWiFiStatus(){
   handleRequest();
 
   // Build a JSON response with the current provisioning / connection state.
-  // This endpoint is polled by the provisioning UI page after a save.
+  // This endpoint is polled by the provisioning UI page after a save and by
+  // the live status script on the WiFi-setup page.
+  bool connected = (WiFi.status() == WL_CONNECTED);
+
   String json = F("{\"state\":\"");
   json += getProvisioningStateStr();
   json += F("\",\"ssid\":\"");
   json += htmlEntities(WiFi_SSID());
   json += F("\",\"ip\":\"");
-  if(WiFi.status() == WL_CONNECTED) json += WiFi.localIP().toString();
+  if(connected) json += WiFi.localIP().toString();
   json += F("\",\"error\":\"");
   json += _provisioningError;
+  json += F("\",\"wlstatus\":\"");
+  json += connected ? F("connected") : F("disconnected");
   json += F("\"");
+
+  if(connected) {
+    int rssi = WiFi.RSSI();
+    json += F(",\"rssi\":");
+    json += String(rssi);
+    json += F(",\"quality\":");
+    json += String(getRSSIasQuality(rssi));
+  }
+
+  // Map last connection result to a short machine-readable string so the
+  // frontend can show user-friendly error messages.
+  json += F(",\"lastResult\":\"");
+  switch(_lastconxresult) {
+    case WL_STATION_WRONG_PASSWORD: json += F("wrong_password"); break;
+    case WL_NO_SSID_AVAIL:          json += F("not_found");      break;
+    case WL_CONNECT_FAILED:
+    case WL_CONNECTION_LOST:        json += F("failed");         break;
+    case WL_CONNECTED:              json += F("connected");      break;
+    default:                        break; // WL_IDLE_STATUS – no attempt yet
+  }
+  json += F("\"");
+
   if(_apShutdownPending && _apShutdownDeadline > millis()) {
     json += F(",\"apShutdownIn\":");
     json += String((long)(_apShutdownDeadline - millis()));
