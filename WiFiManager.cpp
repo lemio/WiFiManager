@@ -1087,7 +1087,8 @@ bool WiFiManager::saveWiFiCredentials(String ssid, String pass) {
   #endif
   WiFi_enableSTA(true, storeSTAmode);
   WiFi.persistent(true);
-  // connect=false: update NVS config only, do not disconnect the current session
+  // connect=false: write the new SSID/password to NVS (persistent config) only.
+  // The current STA session is already connected and will not be interrupted.
   bool ret = WiFi.begin(ssid.c_str(), pass.c_str(), 0, NULL, false);
   WiFi.persistent(false);
   return ret;
@@ -1113,11 +1114,11 @@ String WiFiManager::getProvisioningStateStr() {
  * Maps low-level WL status codes to a human-readable error string.
  */
 String WiFiManager::getProvisioningFailureReason(uint8_t status) {
-  if(status == WL_NO_SSID_AVAIL)           return F("SSID not found");
-  if(status == WL_STATION_WRONG_PASSWORD)   return F("Wrong password");
-  if(status == WL_CONNECT_FAILED)           return F("Connection failed");
-  if(status == WL_CONNECTION_LOST)          return F("Connection lost / wrong password");
-  if(status == WL_IDLE_STATUS)              return F("Connection timed out");
+  if(status == WL_NO_SSID_AVAIL)          return F("SSID not found");
+  if(status == WL_STATION_WRONG_PASSWORD)  return F("Wrong password");
+  if(status == WL_CONNECT_FAILED)          return F("Connection failed");
+  if(status == WL_CONNECTION_LOST)         return F("Connection lost / wrong password");
+  if(status == WL_IDLE_STATUS)             return F("Connection timed out");
   return F("Unknown error");
 }
 
@@ -2061,7 +2062,6 @@ void WiFiManager::handleWiFiStatus(){
   #endif
   json += F("}");
 
-  server->sendHeader(FPSTR(HTTP_HEAD_CORS), FPSTR(HTTP_HEAD_CORS_ALLOW_ALL));
   server->send(200, F("application/json"), json);
 }
 
@@ -2169,7 +2169,6 @@ void WiFiManager::handleWifiSave() {
     page += FPSTR(HTTP_SAVED_PROVISIONING);
     if(_showBack) page += FPSTR(HTTP_BACKBTN);
     page += getHTTPEnd();
-    server->sendHeader(FPSTR(HTTP_HEAD_CORS), FPSTR(HTTP_HEAD_CORS_ALLOW_ALL));
     HTTPSend(page);
     #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(WM_DEBUG_DEV,F("Sent provisioning save page"));
