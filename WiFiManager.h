@@ -572,6 +572,7 @@ class WiFiManager
     unsigned long _webPortalAccessed      = 0; // ms last web access time
     uint8_t       _lastconxresult         = WL_IDLE_STATUS; // store last result when doing connect operations
     int           _numNetworks            = 0; // init index for numnetworks wifiscans
+    bool          _scanFailed             = false; // true when last sync scan returned WIFI_SCAN_FAILED
     unsigned long _lastscan               = 0; // ms for timing wifi scans
     unsigned long _startscan              = 0; // ms for timing wifi scans
     unsigned long _startconn              = 0; // ms for timing wifi connects
@@ -620,6 +621,7 @@ class WiFiManager
     bool           _provisioningConnecting = false;  // true while non-blocking STA connect is running
     unsigned long  _apShutdownDeadline    = 0;       // millis() deadline for AP shutdown
     bool           _apShutdownPending     = false;   // true when waiting for AP shutdown delay
+    unsigned long  _ipWaitStart           = 0;       // millis() when WL_CONNECTED first seen with 0.0.0.0 IP
 
     #ifdef ESP32
     wifi_event_id_t wm_event_id           = 0;

@@ -1031,6 +1031,20 @@ uint8_t WiFiManager::checkProvisioningState() {
   bool gracePeriod = elapsed < PROV_GRACE_PERIOD_MS;
 
   if(status == WL_CONNECTED) {
+    // Wait for DHCP to assign a real IP before declaring success.
+    // WiFi.status() can become WL_CONNECTED before the IP address is assigned
+    // (localIP() returns 0.0.0.0 during that window).  8 s covers even slow
+    // DHCP servers; typical assignment completes in under 2 s.
+    static const unsigned long DHCP_IP_WAIT_MS = 8000UL;
+    if(WiFi.localIP() == IPAddress(0,0,0,0)) {
+      if(_ipWaitStart == 0) _ipWaitStart = millis();
+      if(millis() - _ipWaitStart < DHCP_IP_WAIT_MS) {
+        return WL_IDLE_STATUS; // still waiting for DHCP
+      }
+      // timeout – proceed anyway so we don't get stuck forever
+    }
+    _ipWaitStart = 0;
+
     #ifdef WM_DEBUG_LEVEL
     DEBUG_WM(WM_DEBUG_VERBOSE,F("Provisioning: STA connected, IP:"),WiFi.localIP());
     #endif
@@ -1624,8 +1638,11 @@ void WiFiManager::handleWifi(boolean scan) {
   handleRequest();
   String page = getHTTPHead(FPSTR(S_titlewifi), FPSTR(C_wifi)); // @token titlewifi
 
-  // Status banner at the TOP of the page so users see connection state immediately
+  // Status banner + refresh icon button in a flex row
+  page += F("<div class='sh'>");
   reportStatus(page);
+  page += FPSTR(HTTP_SCAN_LINK); // refresh icon button
+  page += F("</div>");
 
   if (scan) {
     #ifdef WM_DEBUG_LEVEL
@@ -1662,7 +1679,6 @@ void WiFiManager::handleWifi(boolean scan) {
     page += getParamOut();
   }
   page += FPSTR(HTTP_FORM_END);
-  page += FPSTR(HTTP_SCAN_LINK);
   if(_showBack) page += FPSTR(HTTP_BACKBTN);
 
   // Bottom navigation bar
@@ -1732,8 +1748,9 @@ String WiFiManager::getMenuOut(){
 // }
 
 void WiFiManager::WiFi_scanComplete(int networksFound){
-  _lastscan = millis();
+  _lastscan    = millis();
   _numNetworks = networksFound;
+  _scanFailed  = false; // async scan completed (even if 0 networks, it didn't fail)
   #ifdef WM_DEBUG_LEVEL
   DEBUG_WM(WM_DEBUG_VERBOSE,F("WiFi Scan ASYNC completed"), "in "+(String)(_lastscan - _startscan)+" ms");  
   DEBUG_WM(WM_DEBUG_VERBOSE,F("WiFi Scan ASYNC found:"),_numNetworks);
@@ -1800,6 +1817,7 @@ bool WiFiManager::WiFi_scanNetworks(bool force,bool async){
         #ifdef WM_DEBUG_LEVEL
         DEBUG_WM(WM_DEBUG_ERROR,F("[ERROR] scan failed"));
         #endif
+        _scanFailed = true;
       }  
       else if(res == WIFI_SCAN_RUNNING){
         #ifdef WM_DEBUG_LEVEL
@@ -1812,8 +1830,9 @@ bool WiFiManager::WiFi_scanNetworks(bool force,bool async){
           delay(100);
         }
         _numNetworks = WiFi.scanComplete();
+        _scanFailed  = false;
       }
-      else if(res >=0 ) _numNetworks = res;
+      else if(res >=0 ) { _numNetworks = res; _scanFailed = false; }
       _lastscan = millis();
       #ifdef WM_DEBUG_LEVEL
       DEBUG_WM(WM_DEBUG_VERBOSE,F("WiFi Scan completed"), "in "+(String)(_lastscan - _startscan)+" ms");
@@ -1836,10 +1855,12 @@ String WiFiManager::WiFiManager::getScanItemOut(){
     int n = _numNetworks;
     if (n == 0) {
       #ifdef WM_DEBUG_LEVEL
-      DEBUG_WM(F("No networks found"));
+      if(_scanFailed) DEBUG_WM(F("Scan failed"));
+      else            DEBUG_WM(F("No networks found"));
       #endif
-      page += FPSTR(S_nonetworks); // @token nonetworks
-      page += F("<br/><br/>");
+      page += F("<p class='nm'>");
+      page += _scanFailed ? FPSTR(S_scanfailed) : FPSTR(S_nonetworks);
+      page += F("</p>");
     }
     else {
       #ifdef WM_DEBUG_LEVEL
@@ -1900,6 +1921,9 @@ String WiFiManager::WiFiManager::getScanItemOut(){
       bool tok_q = HTTP_ITEM_STR.indexOf(FPSTR(T_q)) > 0;
       bool tok_i = HTTP_ITEM_STR.indexOf(FPSTR(T_i)) > 0;
       
+      // Wrap network items in a scrollable div
+      page += F("<div class='wl'>");
+
       //display networks in page
       for (int i = 0; i < n; i++) {
         if (indices[i] == -1) continue; // skip dups
@@ -1942,7 +1966,7 @@ String WiFiManager::WiFiManager::getScanItemOut(){
         }
 
       }
-      page += FPSTR(HTTP_BR);
+      page += F("</div>"); // close .wl scrollable div
     }
 
     return page;
@@ -2229,6 +2253,7 @@ void WiFiManager::handleWifiSave() {
     _provisioningError      = "";
     _apShutdownPending      = false;
     _startconn              = millis();
+    _ipWaitStart            = 0; // reset DHCP-wait timer for new attempt
 
     // Apply static IP config if set
     setSTAConfig();

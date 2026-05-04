@@ -63,7 +63,7 @@ const char HTTP_ITEM[]             PROGMEM = "<div><a href='#p' onclick='c(this)
 // const char HTTP_ITEM[]            PROGMEM = "<div><a href='#p' onclick='c(this)'>{v}</a> {R} {r}% {q} {e}</div>"; // test all tokens
 
 const char HTTP_FORM_START[]       PROGMEM = "<form method='POST' action='{v}'>";
-const char HTTP_FORM_WIFI[]        PROGMEM = "<label for='s'>Network Name</label><input id='s' name='s' maxlength='32' autocorrect='off' autocapitalize='none' placeholder='{v}' pattern='^[^!#;+\\/\\[\\]\"\\s].{0,31}$' title='Network name (1-32 chars, first character cannot be a space or !#;+/[]\")'><br/><label for='p'>Password</label><input id='p' name='p' maxlength='64' type='password' placeholder='{p}' pattern='^.{8,63}$' title='WiFi password must be between 8 and 63 characters (leave empty for open networks).'><input type='checkbox' id='showpass' onclick='f()'> <label for='showpass'>Show Password</label><br/>";
+const char HTTP_FORM_WIFI[]        PROGMEM = "<label for='s'>Network Name</label><input id='s' name='s' maxlength='32' autocorrect='off' autocapitalize='none' placeholder='{v}' pattern='^[^!#;+\\/\\[\\]\"\\s].{0,31}$' title='Network name (1-32 chars, first character cannot be a space or !#;+/[]\")'><br/><label for='p'>Password</label><div class='pw-wrap'><input id='p' name='p' maxlength='64' type='password' placeholder='{p}' pattern='^.{8,63}$' title='WiFi password must be between 8 and 63 characters (leave empty for open networks).'><button type='button' class='pw-btn' onclick='f()' aria-label='Show or hide password'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='currentColor'><path d='M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z'/></svg></button></div><br/>";
 const char HTTP_FORM_WIFI_END[]    PROGMEM = "";
 const char HTTP_FORM_STATIC_HEAD[] PROGMEM = "<hr><br/>";
 const char HTTP_FORM_END[]         PROGMEM = "<br/><br/><button type='submit'>Save</button></form>";
@@ -71,7 +71,7 @@ const char HTTP_FORM_LABEL[]       PROGMEM = "<label for='{i}'>{t}</label>";
 const char HTTP_FORM_PARAM_HEAD[]  PROGMEM = "<hr><br/>";
 const char HTTP_FORM_PARAM[]       PROGMEM = "<br/><input id='{i}' name='{n}' maxlength='{l}' value='{v}' {c}>\n"; // do not remove newline!
 
-const char HTTP_SCAN_LINK[]        PROGMEM = "<br/><form action='/wifi?refresh=1' method='POST'><button name='refresh' value='1' onclick=\"this.textContent='Scanning\u2026'\">Refresh</button></form>";
+const char HTTP_SCAN_LINK[]        PROGMEM = "<form class='rf' action='/wifi?refresh=1' method='POST'><button type='submit' class='rib' name='refresh' value='1' aria-label='Refresh networks' title='Refresh'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='currentColor'><path d='M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z'/></svg></button></form>";
 const char HTTP_SAVED[]            PROGMEM = "<div class='msg'>Connecting to WiFi network...<br/>If the connection fails, come back to this page to try again.</div>";
 const char HTTP_PARAMSAVED[]       PROGMEM = "<div class='msg S'>Saved<br/></div>";
 // Provisioning mode save page: stays open and polls /status with JavaScript
@@ -112,9 +112,18 @@ const char HTTP_BACKBTN[]          PROGMEM = "<hr><br/><form action='/' method='
 // Bottom navigation bar shown on WiFi-setup and info pages
 const char HTTP_NAV_BOTTOM[]       PROGMEM =
   "<div class='nav'>"
-    "<a href='/wifi'>&#9881;&nbsp;WiFi&nbsp;Setup</a>"
-    "<a href='/info'>&#9432;&nbsp;Info</a>"
-    "<a href='/restart'>&#8635;&nbsp;Restart</a>"
+    "<a href='/wifi'>"
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='22' height='22' fill='currentColor'><path d='M1 9l2 2c5.1-5.1 13.3-5.1 18.4 0l2-2C16.5 2.3 7.3 2.3 1 9zm8 8l3 3 3-3c-1.7-1.6-4.2-1.6-6 0zm-4-4l2 2c2.8-2.8 7.3-2.8 10.1 0l2-2C15.5 9.5 8.3 9.5 5 13z'/></svg>"
+      "<span>WiFi</span>"
+    "</a>"
+    "<a href='/info'>"
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='22' height='22' fill='currentColor'><path d='M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z'/></svg>"
+      "<span>Info</span>"
+    "</a>"
+    "<a href='/restart'>"
+      "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='22' height='22' fill='currentColor'><path d='M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z'/></svg>"
+      "<span>Restart</span>"
+    "</a>"
   "</div>";
 
 // Live status polling script – polls /status every 6 s and updates the element
@@ -202,15 +211,30 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 ".sp{display:inline-block;width:1em;height:1em;border:3px solid rgba(31,163,236,.3);border-top-color:#1fa3ec;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle}"
 "@keyframes spin{to{transform:rotate(360deg)}}"
 // bottom navigation bar
-".nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #ddd;padding:8px 5px;text-align:center;z-index:100}"
-".nav a{color:#1fa3ec;margin:0 12px;font-size:.95em;text-decoration:none;font-weight:bold}"
+".nav{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid #ddd;padding:4px 5px;text-align:center;z-index:100;display:flex;justify-content:space-around}"
+".nav a{color:#1fa3ec;margin:0;font-size:.65em;text-decoration:none;font-weight:bold;display:flex;flex-direction:column;align-items:center;padding:2px 12px}"
+".nav a svg{display:block;margin:0 auto 2px}"
 // add bottom padding to wrap so content is not hidden behind nav
-".wrap{padding-bottom:48px}"
+".wrap{padding-bottom:60px}"
+// password eye-icon wrapper
+".pw-wrap{position:relative;padding:0;margin:0}"
+".pw-wrap>input{padding-right:40px}"
+".pw-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:none;border:none;padding:6px;cursor:pointer;width:36px;line-height:1;color:#888}"
+// status + refresh icon flex row
+".sh{display:flex;align-items:flex-start;gap:6px}"
+".sh>.msg{flex:1;margin:5px 0}"
+".rf{flex-shrink:0;margin:5px 0;width:auto}"
+".rib{width:36px;height:36px;padding:7px;border-radius:.3rem;line-height:1}"
+// scrollable wifi network list
+".wl{max-height:40vh;overflow-y:auto;border:1px solid #eee;border-radius:.3rem;margin:5px 0}"
+// empty/error message for network list
+".nm{color:#888;text-align:center;padding:8px 0;margin:0}"
 // invert
 "body.invert{background-color:#060606;}"
 "body.invert,body.invert a,body.invert h1 {color:#fff;}"
 "body.invert .msg{color:#fff;background-color:#282828;border-top:1px solid #555;border-right:1px solid #555;border-bottom:1px solid #555;}"
 "body.invert .q[role=img]{-webkit-filter:invert(1);filter:invert(1);}"
+"body.invert .nav{background:#121212;border-top-color:#333}"
 ":disabled {opacity: 0.5;}"
 "</style>";
 
@@ -338,6 +362,7 @@ const char S_titleerase[]         PROGMEM = "Erase";
 const char S_titleclose[]         PROGMEM = "Close";
 const char S_options[]            PROGMEM = "options";
 const char S_nonetworks[]         PROGMEM = "No networks found. Refresh to scan again.";
+const char S_scanfailed[]         PROGMEM = "Scan failed. Tap refresh to try again.";
 const char S_staticip[]           PROGMEM = "Static IP";
 const char S_staticgw[]           PROGMEM = "Static gateway";
 const char S_staticdns[]          PROGMEM = "Static DNS";
