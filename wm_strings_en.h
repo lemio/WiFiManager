@@ -34,7 +34,7 @@ const char HTTP_SCRIPT[]           PROGMEM = "<script>function c(l){"
 "p = l.nextElementSibling.classList.contains('l');"
 "document.getElementById('p').disabled = !p;"
 "if(p)document.getElementById('p').focus();};"
-"function f() {document.getElementById('p').classList.toggle('pw-masked');}"
+"function f() {var x=document.getElementById('p');var b=document.querySelector('.pw-btn');var m=x.classList.toggle('pw-masked');b.setAttribute('aria-label',m?'Show password':'Hide password');}"
 "</script>"; // @todo add button states, disable on click , show ack , spinner etc
 
 const char HTTP_HEAD_END[]         PROGMEM = "</head><body class='{c}'><div class='wrap'>"; // {c} = _bodyclass
@@ -239,7 +239,7 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 ".pw-wrap{position:relative;padding:0;margin:0}"
 ".pw-wrap>input{padding-right:40px}"
 ".pw-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:none;border:none;padding:6px;cursor:pointer;width:36px;line-height:1;color:#888}"
-".pw-masked{text-security:disc;-webkit-text-security:disc;-moz-text-security:disc;}"
+".pw-masked{-webkit-text-security:disc;-moz-text-security:disc;}"
 // status + refresh icon flex row
 ".sh{display:flex;align-items:flex-start;gap:6px}"
 ".sh>.msg{flex:1;margin:5px 0}"
