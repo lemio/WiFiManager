@@ -4359,8 +4359,13 @@ String WiFiManager::WiFi_psk(bool persistent) const {
         #endif
         WiFi.reconnect();
       #endif
-      // LED: any disconnect (including out-of-range, router restart, etc.) shows FAILED
-      setLEDState(WM_LED_FAILED);
+      // LED: show FAILED on disconnect, but ignore the spurious disconnect that
+      // WiFi.begin(connect=false) / AP teardown fires during a successful provisioning
+      // save – _provisioningState is CONNECTED from the moment we confirm the STA link
+      // until the portal fully closes.
+      if(_provisioningState != WM_PROV_CONNECTED) {
+        setLEDState(WM_LED_FAILED);
+      }
   }
   else if(event == ARDUINO_EVENT_WIFI_STA_GOT_IP){
     // LED: STA obtained an IP – this covers autonomous reconnects as well as
@@ -4388,7 +4393,11 @@ void WiFiManager::WiFi_autoReconnect(){
     }
     if(!_wifiDisconnectedHandler) {
       _wifiDisconnectedHandler = WiFi.onStationModeDisconnected([this](const WiFiEventStationModeDisconnected&) {
-        setLEDState(WM_LED_FAILED);
+        // Ignore the spurious disconnect fired by WiFi.begin(connect=false) / AP teardown
+        // during a successful provisioning save.
+        if(_provisioningState != WM_PROV_CONNECTED) {
+          setLEDState(WM_LED_FAILED);
+        }
       });
     }
   #elif defined(ESP32)
