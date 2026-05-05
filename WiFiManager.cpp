@@ -343,6 +343,7 @@ boolean WiFiManager::autoConnect(char const *apName, char const *apPassword) {
       DEBUG_WM(F("AutoConnect: ESP Already Connected"));
       #endif
       setSTAConfig();
+      setLEDState(WM_LED_CONNECTED); // already connected – set LED
       // @todo not sure if this is safe, causes dup setSTAConfig in connectwifi,
       // and we have no idea WHAT we are connected to
     }
@@ -772,6 +773,13 @@ boolean  WiFiManager::startConfigPortal(char const *apName, char const *apPasswo
   startAP();
   WiFiSetCountry();
 
+  // Set LED: NOWIFI when no credentials are saved, else FAILED (credentials exist but didn't connect)
+  if(!WiFi_hasAutoConnect()) {
+    setLEDState(WM_LED_NOWIFI);
+  } else if(_ledCurrentState == WM_LED_OFF) {
+    setLEDState(WM_LED_NOWIFI);
+  }
+
   // do AP callback if set
   if ( _apcallback != NULL) {
     #ifdef WM_DEBUG_LEVEL
@@ -889,6 +897,9 @@ boolean WiFiManager::process(){
  * @return {[type]} [description]
  */
 uint8_t WiFiManager::processConfigPortal(){
+    // Check LED timeout on every iteration
+    checkLEDTimeout();
+
     if(configPortalActive){
       //DNS handler
       dnsServer->processNextRequest();
@@ -1276,6 +1287,8 @@ uint8_t WiFiManager::connectWifi(String ssid, String pass, bool connect) {
   uint8_t retry = 1;
   uint8_t connRes = (uint8_t)WL_NO_SSID_AVAIL;
 
+  setLEDState(WM_LED_CONNECTING);
+
   setSTAConfig();
   //@todo catch failures in set_config
   
@@ -1466,6 +1479,13 @@ void WiFiManager::updateConxResult(uint8_t status){
       }
     DEBUG_WM(WM_DEBUG_DEV,F("lastconxresult:"),getWLStatusString(_lastconxresult));
     #endif
+
+  // Update LED state based on connection result
+  if(_lastconxresult == WL_CONNECTED) {
+    setLEDState(WM_LED_CONNECTED);
+  } else if(_lastconxresult != WL_IDLE_STATUS) {
+    setLEDState(WM_LED_FAILED);
+  }
 }
 
  
@@ -2255,6 +2275,8 @@ void WiFiManager::handleWifiSave() {
     _startconn              = millis();
     _ipWaitStart            = 0; // reset DHCP-wait timer for new attempt
 
+    setLEDState(WM_LED_CONNECTING); // signal LED: connecting
+
     // Apply static IP config if set
     setSTAConfig();
 
@@ -2266,8 +2288,13 @@ void WiFiManager::handleWifiSave() {
     WiFi.persistent(false);
 
     // Return the provisioning status page which polls /status via JS
+    // Replace custom SVG tokens before sending.
     String page = getHTTPHead(FPSTR(S_titlewifisaved), FPSTR(C_wifi));
-    page += FPSTR(HTTP_SAVED_PROVISIONING);
+    String provPage = FPSTR(HTTP_SAVED_PROVISIONING);
+    provPage.replace(F("{svgC}"), _customConnectingSVG ? _customConnectingSVG : "");
+    provPage.replace(F("{svgS}"), _customSuccessSVG    ? _customSuccessSVG    : "");
+    provPage.replace(F("{svgF}"), _customFailureSVG    ? _customFailureSVG    : "");
+    page += provPage;
     if(_showBack) page += FPSTR(HTTP_BACKBTN);
     page += getHTTPEnd();
     HTTPSend(page);
@@ -4491,3 +4518,114 @@ void WiFiManager::handleUpdateDone() {
 }
 
 #endif
+
+// ---------------------------------------------------------------------------
+// LED behaviour
+// ---------------------------------------------------------------------------
+
+/**
+ * setLEDCallback
+ * Register a function to be called whenever the LED state changes.
+ * The callback receives a wm_ledstate_t:
+ *   WM_LED_OFF        – LED should be turned off (timeout elapsed)
+ *   WM_LED_NOWIFI     – No WiFi configured    (suggest: Orange, solid)
+ *   WM_LED_CONNECTED  – WiFi connected        (suggest: Green, solid)
+ *   WM_LED_FAILED     – Connection failed     (suggest: Red, solid)
+ *   WM_LED_CONNECTING – Connecting in progress (suggest: Blue, pulsing)
+ */
+void WiFiManager::setLEDCallback(std::function<void(wm_ledstate_t)> func) {
+  _ledcallback = func;
+}
+
+/** Set how long (ms) the LED stays on for the "no WiFi configured" state. 0 = infinite. */
+void WiFiManager::setLEDTimeoutNoWifi(unsigned long ms) {
+  _ledTimeoutNoWifi = ms;
+}
+
+/** Set how long (ms) the LED stays on after a successful WiFi connection. 0 = infinite. */
+void WiFiManager::setLEDTimeoutConnected(unsigned long ms) {
+  _ledTimeoutConnected = ms;
+}
+
+/** Set how long (ms) the LED stays on after a failed connection attempt. 0 = infinite. */
+void WiFiManager::setLEDTimeoutFailed(unsigned long ms) {
+  _ledTimeoutFailed = ms;
+}
+
+/** Set how long (ms) the LED stays on while a connection attempt is in progress. 0 = infinite. */
+void WiFiManager::setLEDTimeoutConnecting(unsigned long ms) {
+  _ledTimeoutConnecting = ms;
+}
+
+/**
+ * setLEDState (private)
+ * Transition to a new LED state, reset the timeout timer, and invoke the
+ * user callback.  Calling with the same state that is already active is a
+ * no-op (avoids flooding the callback on every processConfigPortal tick).
+ */
+void WiFiManager::setLEDState(wm_ledstate_t state) {
+  if(_ledcallback == NULL) return;
+  if(state == _ledCurrentState) return;
+  _ledCurrentState = state;
+  _ledStateStart   = millis();
+  _ledcallback(state);
+}
+
+/**
+ * checkLEDTimeout (private)
+ * If the current LED state has been active for longer than its configured
+ * timeout (and the timeout is > 0), transition to WM_LED_OFF.
+ * Called from processConfigPortal() on every iteration.
+ */
+void WiFiManager::checkLEDTimeout() {
+  if(_ledcallback == NULL) return;
+  if(_ledCurrentState == WM_LED_OFF) return;
+
+  unsigned long timeout = 0;
+  switch(_ledCurrentState) {
+    case WM_LED_NOWIFI:     timeout = _ledTimeoutNoWifi;     break;
+    case WM_LED_CONNECTED:  timeout = _ledTimeoutConnected;  break;
+    case WM_LED_FAILED:     timeout = _ledTimeoutFailed;     break;
+    case WM_LED_CONNECTING: timeout = _ledTimeoutConnecting; break;
+    default: return;
+  }
+
+  if(timeout > 0 && (millis() - _ledStateStart) >= timeout) {
+    _ledCurrentState = WM_LED_OFF;
+    _ledcallback(WM_LED_OFF);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Custom SVG setters
+// ---------------------------------------------------------------------------
+
+/**
+ * setCustomConnectingSVG
+ * Set custom SVG (or any HTML) to display on the provisioning status page
+ * while a WiFi connection attempt is in progress.
+ * Pass NULL to remove.
+ */
+void WiFiManager::setCustomConnectingSVG(const char* svg) {
+  _customConnectingSVG = svg;
+}
+
+/**
+ * setCustomSuccessSVG
+ * Set custom SVG (or any HTML) to display on the provisioning status page
+ * when the WiFi connection succeeds.
+ * Pass NULL to remove.
+ */
+void WiFiManager::setCustomSuccessSVG(const char* svg) {
+  _customSuccessSVG = svg;
+}
+
+/**
+ * setCustomFailureSVG
+ * Set custom SVG (or any HTML) to display on the provisioning status page
+ * when the WiFi connection fails.
+ * Pass NULL to remove.
+ */
+void WiFiManager::setCustomFailureSVG(const char* svg) {
+  _customFailureSVG = svg;
+}

@@ -75,23 +75,37 @@ const char HTTP_SCAN_LINK[]        PROGMEM = "<form class='rf' action='/wifi?ref
 const char HTTP_SAVED[]            PROGMEM = "<div class='msg'>Connecting to WiFi network...<br/>If the connection fails, come back to this page to try again.</div>";
 const char HTTP_PARAMSAVED[]       PROGMEM = "<div class='msg S'>Saved<br/></div>";
 // Provisioning mode save page: stays open and polls /status with JavaScript
+// {svgC} = custom connecting SVG (replaced server-side), {svgS} = success SVG, {svgF} = failure SVG
 const char HTTP_SAVED_PROVISIONING[] PROGMEM =
+  "<div id='wm-svg-c' style='display:none;text-align:center;margin:8px 0'>{svgC}</div>"
+  "<div id='wm-svg-s' style='display:none;text-align:center;margin:8px 0'>{svgS}</div>"
+  "<div id='wm-svg-f' style='display:none;text-align:center;margin:8px 0'>{svgF}</div>"
   "<div class='msg' id='wm-prov-msg'><span class='sp'></span>&nbsp;Connecting&hellip;<br/><small id='wm-prov-status'>Please wait</small></div>"
   "<script>"
+  "function wmSvg(id){"
+    "['wm-svg-c','wm-svg-s','wm-svg-f'].forEach(function(i){"
+      "var e=document.getElementById(i);if(e)e.style.display='none';"
+    "});"
+    "if(id){var e=document.getElementById(id);if(e&&e.innerHTML.trim()!='')e.style.display='';}"
+  "}"
   "function wmPoll(){"
     "fetch('/status').then(function(r){return r.json();}).then(function(d){"
       "var m=document.getElementById('wm-prov-msg');"
       "if(d.state==='connected'){"
+        "wmSvg('wm-svg-s');"
         "m.className='msg S';"
         "m.innerHTML='<strong>Connected!</strong><br/><small>Network: <b>'+d.ssid+'</b><br/>IP: '+d.ip+(d.hostname?'&nbsp;&nbsp;'+d.hostname:'')+'</small>';"
         "var shut=d.apShutdownIn?'<br/><small>Setup mode closes in '+Math.ceil(d.apShutdownIn/1000)+'s</small>':'';"
         "m.innerHTML+=shut;"
+        "m.innerHTML+='<br/><form action=\"/exit\" method=\"get\"><button type=\"submit\">Close setup</button></form>';"
       "}else if(d.state==='failed'){"
+        "wmSvg('wm-svg-f');"
         "var reason=d.error||'Check your settings and try again.';"
         "var ssidTxt=d.ssid?'<b>'+d.ssid+'</b>':'the network';"
         "m.className='msg D';"
-        "m.innerHTML='<strong>Could not connect</strong><br/><small>'+reason+'<br/>Network: '+ssidTxt+'</small><br/><a href=\"/wifi\" aria-label=\"Go back to WiFi settings and try again\">Change settings &amp; try again</a>';"
+        "m.innerHTML='<strong>Could not connect</strong><br/><small>'+reason+'<br/>Network: '+ssidTxt+'</small><br/><form action=\"/wifi\" method=\"get\"><button type=\"submit\">Change settings &amp; try again</button></form>';"
       "}else if(d.state==='connecting'){"
+        "wmSvg('wm-svg-c');"
         "m.className='msg';"
         "m.innerHTML='<span class=\"sp\"></span>&nbsp;Connecting to <b>'+d.ssid+'</b>&hellip;<br/><small id=\"wm-prov-status\">'+new Date().toLocaleTimeString()+'</small>';"
         "setTimeout(wmPoll,1500);"
@@ -102,6 +116,7 @@ const char HTTP_SAVED_PROVISIONING[] PROGMEM =
       "}"
     "}).catch(function(){setTimeout(wmPoll,3000);});"
   "}"
+  "wmSvg('wm-svg-c');"
   "setTimeout(wmPoll,800);"
   "</script>";
 const char HTTP_END[]              PROGMEM = "</div></body></html>";
@@ -227,6 +242,9 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 ".rib{width:36px;height:36px;padding:7px;border-radius:.3rem;line-height:1}"
 // scrollable wifi network list
 ".wl{max-height:40vh;overflow-y:auto;border:1px solid #eee;border-radius:.3rem;margin:5px 0}"
+// network list item: padding + hairline separator (like iOS / Premiere Pro)
+".wl>div{padding:10px 12px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between}"
+".wl>div:last-child{border-bottom:none}"
 // empty/error message for network list
 ".nm{color:#888;text-align:center;padding:8px 0;margin:0}"
 // invert
@@ -235,7 +253,21 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 "body.invert .msg{color:#fff;background-color:#282828;border-top:1px solid #555;border-right:1px solid #555;border-bottom:1px solid #555;}"
 "body.invert .q[role=img]{-webkit-filter:invert(1);filter:invert(1);}"
 "body.invert .nav{background:#121212;border-top-color:#333}"
+"body.invert .wl{border-color:#444}"
+"body.invert .wl>div{border-bottom-color:#333}"
 ":disabled {opacity: 0.5;}"
+// automatic OS dark mode
+"@media(prefers-color-scheme:dark){"
+  "body{background-color:#060606;color:#fff}"
+  "a,h1{color:#fff}"
+  ".msg{color:#fff;background-color:#282828;border-top:1px solid #555;border-right:1px solid #555;border-bottom:1px solid #555}"
+  ".q[role=img]{-webkit-filter:invert(1);filter:invert(1)}"
+  ".nav{background:#121212;border-top-color:#333}"
+  ".wl{border-color:#444}"
+  ".wl>div{border-bottom-color:#333}"
+  "input,select{background-color:#1a1a1a;color:#fff;border:1px solid #444}"
+  ".pw-btn{color:#aaa}"
+"}"
 "</style>";
 
 #ifndef WM_NOHELP
