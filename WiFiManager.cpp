@@ -867,7 +867,11 @@ boolean WiFiManager::process(){
     #if defined(WM_MDNS) && defined(ESP8266)
     MDNS.update();
     #endif
-	
+
+    // Always drive the LED state machine so timeouts fire and the LED
+    // stays accurate even when the config portal is not active.
+    syncLEDState();
+
     if(webPortalActive || (configPortalActive && !_configPortalIsBlocking)){
       // if timed out or abort, break
       if(_allowExit && (configPortalHasTimeout() || abort)){
@@ -899,8 +903,8 @@ boolean WiFiManager::process(){
  * @return {[type]} [description]
  */
 uint8_t WiFiManager::processConfigPortal(){
-    // Check LED timeout on every iteration
-    checkLEDTimeout();
+    // Check LED timeout and reconcile with WiFi status on every iteration.
+    syncLEDState();
 
     if(configPortalActive){
       //DNS handler
@@ -4641,9 +4645,46 @@ void WiFiManager::checkLEDTimeout() {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Custom SVG setters
-// ---------------------------------------------------------------------------
+/**
+ * syncLEDState (private)
+ * Should be called regularly from loop() via process() and from processConfigPortal().
+ * Two jobs:
+ *   1. Always run checkLEDTimeout() so the per-state timer fires even when
+ *      the config portal is not active (fixes "OFF never triggered" after autoConnect).
+ *   2. Once per second, reconcile the LED with the actual WiFi connection status:
+ *      - If WiFi is connected but LED isn't showing CONNECTED, correct it
+ *        (fixes "stuck on blue" when the GOT_IP event was missed).
+ *      - If WiFi is NOT connected but LED is still showing CONNECTED, show FAILED
+ *        (safety net for missed disconnect events).
+ *      Other LED states (CONNECTING, FAILED, NOWIFI, OFF) are left for events
+ *      and their own timeouts to manage.
+ */
+void WiFiManager::syncLEDState() {
+  if(_ledcallback == nullptr) return;
+
+  // Always check timeout so WM_LED_CONNECTED (and others) time out correctly
+  // even when the config portal loop is not running.
+  checkLEDTimeout();
+
+  // Rate-limit the WiFi-status poll to once per second.
+  if(millis() - _ledLastPoll < 1000) return;
+  _ledLastPoll = millis();
+
+  uint8_t wifiStatus = WiFi.status();
+
+  if(wifiStatus == WL_CONNECTED) {
+    // Correct any stale non-CONNECTED state (e.g. stuck on CONNECTING after
+    // the GOT_IP event was missed, or FAILED after an autonomous reconnect).
+    if(_ledCurrentState != WM_LED_CONNECTED && _ledCurrentState != WM_LED_OFF) {
+      setLEDState(WM_LED_CONNECTED);
+    }
+  } else if(_ledCurrentState == WM_LED_CONNECTED) {
+    // LED says connected but WiFi isn't – missed disconnect event.
+    setLEDState(WM_LED_FAILED);
+  }
+}
+
+
 
 /**
  * setCustomConnectingSVG

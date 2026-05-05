@@ -716,6 +716,7 @@ class WiFiManager
     unsigned long _ledTimeoutConnecting   = 5000;   // 5 s (blue pulsing – connecting)
     wm_ledstate_t _ledCurrentState        = WM_LED_OFF;
     unsigned long _ledStateStart          = 0;      // millis() when current LED state was set
+    unsigned long _ledLastPoll            = 0;      // millis() of last 1-second LED reconciliation
 
     // internal options
     
@@ -787,6 +788,7 @@ protected:
     // LED state helpers
     void          setLEDState(wm_ledstate_t state); // set LED state and invoke callback
     void          checkLEDTimeout();                // turn LED off when per-state timeout elapses
+    void          syncLEDState();                   // call from loop(): check timeout + reconcile with WiFi status every 1 s
 
     // webserver handlers
 public:
