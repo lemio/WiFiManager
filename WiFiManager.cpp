@@ -1553,7 +1553,6 @@ String WiFiManager::getHTTPHead(String title, String classes){
   page += FPSTR(HTTP_HEAD_START);
   page.replace(FPSTR(T_v), title);
   page += FPSTR(HTTP_SCRIPT);
-  page += FPSTR(HTTP_SPA_SCRIPT);
   page += FPSTR(HTTP_STYLE);
   page += _customHeadElement;
 
