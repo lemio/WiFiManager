@@ -663,6 +663,13 @@ class WiFiManager
     static uint8_t _lastconxresulttmp; // tmp var for esp32 callback
     #endif
 
+    #ifdef ESP8266
+    // WiFiEventHandler objects must be kept alive for the duration of the
+    // callback registration; storing them as members achieves this.
+    WiFiEventHandler _wifiGotIPHandler;
+    WiFiEventHandler _wifiDisconnectedHandler;
+    #endif
+
     #ifndef WL_STATION_WRONG_PASSWORD
     static constexpr uint8_t WL_STATION_WRONG_PASSWORD = 7; // @kludge define a WL status for wrong password
     #endif

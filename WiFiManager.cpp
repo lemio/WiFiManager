@@ -1693,11 +1693,11 @@ void WiFiManager::handleWifi(boolean scan) {
   } else if(_showPassword) {
     pitem.replace(FPSTR(T_p), htmlEntities(WiFi_psk()));
   }
-  else if(WiFi_psk() != ""){
-    pitem.replace(FPSTR(T_p),FPSTR(S_passph));    
-  }
   else {
-    pitem.replace(FPSTR(T_p),"");    
+    // Leave empty – the S_passph sentinel ("********") cannot be
+    // toggled with the eye button to reveal the real password, so we
+    // just leave the field blank and let the user type it again.
+    pitem.replace(FPSTR(T_p),"");
   }
 
   page += pitem;
@@ -4359,6 +4359,13 @@ String WiFiManager::WiFi_psk(bool persistent) const {
         #endif
         WiFi.reconnect();
       #endif
+      // LED: any disconnect (including out-of-range, router restart, etc.) shows FAILED
+      setLEDState(WM_LED_FAILED);
+  }
+  else if(event == ARDUINO_EVENT_WIFI_STA_GOT_IP){
+    // LED: STA obtained an IP – this covers autonomous reconnects as well as
+    // initial provisioning, overriding whatever state the LED was in.
+    setLEDState(WM_LED_CONNECTED);
   }
   else if(event == ARDUINO_EVENT_WIFI_SCAN_DONE && _asyncScan){
     uint16_t scans = WiFi.scanComplete();
@@ -4370,6 +4377,20 @@ String WiFiManager::WiFi_psk(bool persistent) const {
 void WiFiManager::WiFi_autoReconnect(){
   #ifdef ESP8266
     WiFi.setAutoReconnect(_wifiAutoReconnect);
+    // Register persistent WiFi event handlers so the LED is updated whenever
+    // the network connects or disconnects autonomously (router restart,
+    // device moves in/out of range, password changed on router, etc.).
+    // The WiFiEventHandler objects are stored as members to keep them alive.
+    if(!_wifiGotIPHandler) {
+      _wifiGotIPHandler = WiFi.onStationModeGotIP([this](const WiFiEventStationModeGotIP&) {
+        setLEDState(WM_LED_CONNECTED);
+      });
+    }
+    if(!_wifiDisconnectedHandler) {
+      _wifiDisconnectedHandler = WiFi.onStationModeDisconnected([this](const WiFiEventStationModeDisconnected&) {
+        setLEDState(WM_LED_FAILED);
+      });
+    }
   #elif defined(ESP32)
     // if(_wifiAutoReconnect){
       // @todo move to seperate method, used for event listener now
