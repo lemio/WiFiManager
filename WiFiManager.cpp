@@ -773,11 +773,13 @@ boolean  WiFiManager::startConfigPortal(char const *apName, char const *apPasswo
   startAP();
   WiFiSetCountry();
 
-  // Set LED: NOWIFI when no credentials are saved, else FAILED (credentials exist but didn't connect)
+  // Set LED state: NOWIFI when no credentials are saved; if credentials exist but the
+  // LED is not already active (e.g. manual portal start), use FAILED to signal a
+  // configuration problem (credentials stored but connection could not be established).
   if(!WiFi_hasAutoConnect()) {
     setLEDState(WM_LED_NOWIFI);
   } else if(_ledCurrentState == WM_LED_OFF) {
-    setLEDState(WM_LED_NOWIFI);
+    setLEDState(WM_LED_FAILED);
   }
 
   // do AP callback if set
@@ -4564,7 +4566,7 @@ void WiFiManager::setLEDTimeoutConnecting(unsigned long ms) {
  * no-op (avoids flooding the callback on every processConfigPortal tick).
  */
 void WiFiManager::setLEDState(wm_ledstate_t state) {
-  if(_ledcallback == NULL) return;
+  if(_ledcallback == nullptr) return;
   if(state == _ledCurrentState) return;
   _ledCurrentState = state;
   _ledStateStart   = millis();
@@ -4578,7 +4580,7 @@ void WiFiManager::setLEDState(wm_ledstate_t state) {
  * Called from processConfigPortal() on every iteration.
  */
 void WiFiManager::checkLEDTimeout() {
-  if(_ledcallback == NULL) return;
+  if(_ledcallback == nullptr) return;
   if(_ledCurrentState == WM_LED_OFF) return;
 
   unsigned long timeout = 0;

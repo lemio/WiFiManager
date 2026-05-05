@@ -697,12 +697,12 @@ class WiFiManager
     String        _title                  = FPSTR(S_brand); // app title -  default WiFiManager
 
     // Custom SVG/HTML slots for provisioning status page
-    const char*   _customConnectingSVG    = NULL; // shown while connecting
-    const char*   _customSuccessSVG       = NULL; // shown on successful connection
-    const char*   _customFailureSVG       = NULL; // shown on connection failure
+    const char*   _customConnectingSVG    = nullptr; // shown while connecting
+    const char*   _customSuccessSVG       = nullptr; // shown on successful connection
+    const char*   _customFailureSVG       = nullptr; // shown on connection failure
 
     // LED state callback and per-state timeouts
-    std::function<void(wm_ledstate_t)> _ledcallback = NULL;
+    std::function<void(wm_ledstate_t)> _ledcallback = nullptr;
     unsigned long _ledTimeoutNoWifi       = 0;      // 0 = infinite (orange – no wifi configured)
     unsigned long _ledTimeoutConnected    = 15000;  // 15 s (green – connected)
     unsigned long _ledTimeoutFailed       = 0;      // 0 = infinite (red – failed)
