@@ -4651,13 +4651,20 @@ void WiFiManager::checkLEDTimeout() {
  * Two jobs:
  *   1. Always run checkLEDTimeout() so the per-state timer fires even when
  *      the config portal is not active (fixes "OFF never triggered" after autoConnect).
- *   2. Once per second, reconcile the LED with the actual WiFi connection status:
- *      - If WiFi is connected but LED isn't showing CONNECTED, correct it
- *        (fixes "stuck on blue" when the GOT_IP event was missed).
- *      - If WiFi is NOT connected but LED is still showing CONNECTED, show FAILED
- *        (safety net for missed disconnect events).
- *      Other LED states (CONNECTING, FAILED, NOWIFI, OFF) are left for events
- *      and their own timeouts to manage.
+ *   2. Once per second, correct "stuck on CONNECTING" if WiFi is fully connected
+ *      (WL_CONNECTED + valid IP assigned).  This covers the case where the
+ *      GOT_IP event callback was missed.
+ *
+ * Intentionally NOT done here:
+ *   - Converting CONNECTED → FAILED when WiFi.status() is not WL_CONNECTED.
+ *     WiFi.status() is not a stable signal: DHCP renewal, a background scan
+ *     (ESP8266), or normal beacon-miss recovery can produce a brief
+ *     WL_DISCONNECTED reading even on a healthy link.  Polling that state and
+ *     immediately calling setLEDState(FAILED) causes false-positive red flashes.
+ *     Real disconnects are already handled by the event callbacks registered in
+ *     WiFi_autoReconnect() (onStationModeDisconnected / ARDUINO_EVENT_WIFI_STA_DISCONNECTED).
+ *   - Correcting FAILED/NOWIFI → CONNECTED on an autonomous reconnect.
+ *     Those transitions are also handled by the GOT_IP event callback.
  */
 void WiFiManager::syncLEDState() {
   if(_ledcallback == nullptr) return;
@@ -4670,17 +4677,15 @@ void WiFiManager::syncLEDState() {
   if(millis() - _ledLastPoll < 1000) return;
   _ledLastPoll = millis();
 
-  uint8_t wifiStatus = WiFi.status();
-
-  if(wifiStatus == WL_CONNECTED) {
-    // Correct any stale non-CONNECTED state (e.g. stuck on CONNECTING after
-    // the GOT_IP event was missed, or FAILED after an autonomous reconnect).
-    if(_ledCurrentState != WM_LED_CONNECTED && _ledCurrentState != WM_LED_OFF) {
-      setLEDState(WM_LED_CONNECTED);
-    }
-  } else if(_ledCurrentState == WM_LED_CONNECTED) {
-    // LED says connected but WiFi isn't – missed disconnect event.
-    setLEDState(WM_LED_FAILED);
+  // Only correct "stuck on blue": if we are still showing CONNECTING but WiFi
+  // has actually fully connected (status AND a valid IP have both settled),
+  // advance to CONNECTED.
+  // We require a non-zero localIP so we do not fire prematurely during the
+  // DHCP-assignment window that checkProvisioningState() waits through.
+  if(_ledCurrentState == WM_LED_CONNECTING
+     && WiFi.status() == WL_CONNECTED
+     && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
+    setLEDState(WM_LED_CONNECTED);
   }
 }
 
