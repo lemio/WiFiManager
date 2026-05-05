@@ -37,6 +37,58 @@ const char HTTP_SCRIPT[]           PROGMEM = "<script>function c(l){"
 "function f() {var x=document.getElementById('p');var b=document.querySelector('.pw-btn');var m=x.classList.toggle('pw-masked');b.setAttribute('aria-label',m?'Show password':'Hide password');}"
 "</script>"; // @todo add button states, disable on click , show ack , spinner etc
 
+// Single-page-app router: intercepts all internal navigations (link clicks and
+// form submits), swaps only the .wrap content via fetch+DOMParser, and shows a
+// friendly "Connection to device lost" message when the device is unreachable
+// instead of the browser's native error page.  Retries automatically.
+const char HTTP_SPA_SCRIPT[]       PROGMEM =
+  "<script>"
+  "(function(){"
+    "var _nid=0;"
+    "function nav(u){"
+      "var id=++_nid;"
+      "var c=document.querySelector('.wrap');"
+      "if(c)c.innerHTML='<div class=\"msg\"><span class=\"sp\"></span>\u00a0Loading\u2026</div>';"
+      "fetch(u).then(function(r){var fu=r.url;return r.text().then(function(h){if(id===_nid)inj(h,fu);});}).catch(function(){if(id===_nid)off(u);});"
+    "}"
+    "function navPost(u,d){"
+      "var id=++_nid;"
+      "var c=document.querySelector('.wrap');"
+      "if(c)c.innerHTML='<div class=\"msg\"><span class=\"sp\"></span>\u00a0Loading\u2026</div>';"
+      "fetch(u,{method:'POST',body:d}).then(function(r){var fu=r.url;return r.text().then(function(h){if(id===_nid)inj(h,fu);});}).catch(function(){if(id===_nid)off(u);});"
+    "}"
+    "function inj(h,u){"
+      "var d=new DOMParser().parseFromString(h,'text/html');"
+      "var n=d.querySelector('.wrap');var c=document.querySelector('.wrap');"
+      "if(!n||!c)return;"
+      "c.innerHTML=n.innerHTML;"
+      "history.pushState(null,d.title||'',u);"
+      "document.title=d.title||document.title;"
+      "Array.from(c.querySelectorAll('script')).forEach(function(s){"
+        "var e=document.createElement('script');e.textContent=s.textContent;"
+        "document.head.appendChild(e);document.head.removeChild(e);"
+      "});"
+    "}"
+    "function off(u){"
+      "var c=document.querySelector('.wrap');"
+      "var done=/\\/(restart|exit|erase|close)\\b/.test(u);"
+      "if(c)c.innerHTML='<div class=\"msg D\"><strong>Connection to device lost</strong><br/><small>'+(done?'The device may be restarting. You can close this page.':'Reconnecting\u2026')+'</small></div>';"
+      "if(!done)setTimeout(function(){nav(u);},3000);"
+    "}"
+    "document.addEventListener('click',function(e){"
+      "var a=e.target.closest('a[href]');"
+      "if(a&&!a.target&&a.origin===location.origin){e.preventDefault();nav(a.href);}"
+    "},true);"
+    "document.addEventListener('submit',function(e){"
+      "var f=e.target,m=(f.method||'get').toUpperCase(),u=f.action||location.href;"
+      "e.preventDefault();"
+      "if(m==='POST')navPost(u,new FormData(f));"
+      "else nav(u+(u.indexOf('?')<0?'?':'&')+new URLSearchParams(new FormData(f)));"
+    "},true);"
+    "window.addEventListener('popstate',function(){nav(location.href);});"
+  "})();"
+  "</script>";
+
 const char HTTP_HEAD_END[]         PROGMEM = "</head><body class='{c}'><div class='wrap'>"; // {c} = _bodyclass
 // example of embedded logo, base64 encoded inline, No styling here
 // const char HTTP_ROOT_MAIN[]        PROGMEM = "<img title=' alt=' src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAwCAYAAABXAvmHAAADQElEQVRoQ+2YjW0VQQyE7Q6gAkgFkAogFUAqgFQAVACpAKiAUAFQAaECQgWECggVGH1PPrRvn3dv9/YkFOksoUhhfzwz9ngvKrc89JbnLxuA/63gpsCmwCADWwkNEji8fVNgotDM7osI/x777x5l9F6JyB8R4eeVql4P0y8yNsjM7KGIPBORp558T04A+CwiH1UVUItiUQmZ2XMReSEiAFgjAPBeVS96D+sCYGaUx4cFbLfmhSpnqnrZuqEJgJnd8cQplVLciAgX//Cf0ToIeOB9wpmloLQAwpnVmAXgdf6pwjpJIz+XNoeZQQZlODV9vhc1Tuf6owrAk/8qIhFbJH7eI3eEzsvydQEICqBEkZwiALfF70HyHPpqScPV5HFjeFu476SkRA0AzOfy4hYwstj2ZkDgaphE7m6XqnoS7Q0BOPs/sw0kDROzjdXcCMFCNwzIy0EcRcOvBACfh4k0wgOmBX4xjfmk4DKTS31hgNWIKBCI8gdzogTgjYjQWFMw+o9LzJoZ63GUmjWm2wGDc7EvDDOj/1IVMIyD9SUAL0WEhpriRlXv5je5S+U1i2N88zdPuoVkeB+ls4SyxCoP3kVm9jsjpEsBLoOBNC5U9SwpGdakFkviuFP1keblATkTENTYcxkzgxTKOI3jyDxqLkQT87pMA++H3XvJBYtsNbBN6vuXq5S737WqHkW1VgMQNXJ0RshMqbbT33sJ5kpHWymzcJjNTeJIymJZtSQd9NHQHS1vodoFoTMkfbJzpRnLzB2vi6BZAJxWaCr+62BC+jzAxVJb3dmmiLzLwZhZNPE5e880Suo2AZgB8e8idxherqUPnT3brBDTlPxO3Z66rVwIwySXugdNd+5ejhqp/+NmgIwGX3Py3QBmlEi54KlwmjkOytQ+iJrLJj23S4GkOeecg8G091no737qvRRdzE+HLALQoMTBbJgBsCj5RSWUlUVJiZ4SOljb05eLFWgoJ5oY6yTyJp62D39jDANoKKcSocPJD5dQYzlFAFZJflUArgTPZKZwLXAnHmerfJquUkKZEgyzqOb5TuDt1P3nwxobqwPocZA11m4A1mBx5IxNgRH21ti7KbAGiyNn3HoF/gJ0w05A8xclpwAAAABJRU5ErkJggg==' /><h1>{v}</h1><h3>WiFiManager</h3>";
@@ -66,7 +118,7 @@ const char HTTP_FORM_START[]       PROGMEM = "<form method='POST' action='{v}'>"
 const char HTTP_FORM_WIFI[]        PROGMEM = "<label for='s'>Network Name</label><input id='s' name='s' maxlength='32' autocorrect='off' autocapitalize='none' value='{v}' pattern='^[^!#;+\\/\\[\\]\"\\s].{0,31}$' title='Network name (1-32 chars, first character cannot be a space or !#;+/[]\")'><br/><label for='p'>Password</label><div class='pw-wrap'><input id='p' name='p' maxlength='64' type='text' class='pw-masked' value='{p}' autocomplete='off' pattern='^.{8,63}$' title='WiFi password must be between 8 and 63 characters (leave empty for open networks).'><button type='button' class='pw-btn' onclick='f()' aria-label='Show password'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='currentColor'><path d='M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z'/></svg></button></div><br/>";
 const char HTTP_FORM_WIFI_END[]    PROGMEM = "";
 const char HTTP_FORM_STATIC_HEAD[] PROGMEM = "<hr><br/>";
-const char HTTP_FORM_END[]         PROGMEM = "<br/><br/><button type='submit'>Save</button></form>";
+const char HTTP_FORM_END[]         PROGMEM = "<br/><button type='submit' class='btn-cta'>Save</button></form>";
 const char HTTP_FORM_LABEL[]       PROGMEM = "<label for='{i}'>{t}</label>";
 const char HTTP_FORM_PARAM_HEAD[]  PROGMEM = "<hr><br/>";
 const char HTTP_FORM_PARAM[]       PROGMEM = "<br/><input id='{i}' name='{n}' maxlength='{l}' value='{v}' {c}>\n"; // do not remove newline!
@@ -93,6 +145,7 @@ const char HTTP_SAVED_PROVISIONING[] PROGMEM =
     "fetch('/status').then(function(r){return r.json();}).then(function(d){"
       "var m=document.getElementById('wm-prov-msg');"
       "var b=document.getElementById('wm-prov-btns');"
+      "if(!m)return;" // navigated away — stop polling
       "if(d.state==='connected'){"
         "wmSvg('wm-svg-s');"
         "m.className='msg S';"
@@ -119,7 +172,7 @@ const char HTTP_SAVED_PROVISIONING[] PROGMEM =
         "if(s)s.textContent=d.state;"
         "setTimeout(wmPoll,2000);"
       "}"
-    "}).catch(function(){setTimeout(wmPoll,3000);});"
+    "}).catch(function(){if(document.getElementById('wm-prov-msg'))setTimeout(wmPoll,3000);});"
   "}"
   "wmSvg('wm-svg-c');"
   "setTimeout(wmPoll,800);"
@@ -213,7 +266,7 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 "input,button,select,.msg{border-radius:.3rem;width: 100%}input[type=radio],input[type=checkbox]{width:auto}"
 "button,input[type='button'],input[type='submit']{cursor:pointer;border:0;background-color:#1fa3ec;color:#fff;line-height:2.75rem;font-size:1.2rem;width:100%}"
 "input[type='file']{border:1px solid #1fa3ec}"
-".wrap {text-align:left;display:inline-block;min-width:260px;max-width:500px}"
+".wrap {text-align:left;display:block;width:100%;max-width:500px;margin:0 auto}"
 ".footer {position: fixed; text-align: center; bottom: 0; width: 100%}"
 // links
 "a{color:#000;font-weight:700;text-decoration:none}a:hover{color:#1fa3ec;text-decoration:underline}"
@@ -226,8 +279,6 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 "background-size: 95px 16px;}}"
 // msg callouts
 ".msg{padding:20px;margin:20px 0;border:1px solid #eee;border-left-width:5px;border-left-color:#777}.msg h4{margin-top:0;margin-bottom:5px}.msg.P{border-left-color:#1fa3ec}.msg.P h4{color:#1fa3ec}.msg.D{border-left-color:#dc3630}.msg.D h4{color:#dc3630}.msg.S{border-left-color: #5cb85c}.msg.S h4{color: #5cb85c}"
-// status banner: reserve space for the tallest error so the layout doesn't jump
-"#wm-live-status{min-height:110px}"
 // highlight input when password is wrong
 ".input-error{border-color:#dc3630!important;box-shadow:0 0 0 3px rgba(220,54,48,.15)!important}"
 // lists
@@ -246,13 +297,15 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 ".nav a svg{display:block;margin:0 auto 2px}"
 // add bottom padding to wrap so content is not hidden behind nav
 ".wrap{padding-bottom:60px}"
+// sticky call-to-action button sits above the nav bar
+".btn-cta{position:sticky;bottom:58px;z-index:10}"
 // password eye-icon wrapper
 ".pw-wrap{position:relative;padding:0;margin:0}"
 ".pw-wrap>input{padding-right:40px}"
 ".pw-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:none;border:none;padding:6px;cursor:pointer;width:36px;line-height:1;color:#888}"
 ".pw-masked{-webkit-text-security:disc;-moz-text-security:disc;}"
 // status + refresh icon flex row
-".sh{display:flex;align-items:flex-start;gap:6px;width:100%}"
+".sh{display:flex;align-items:flex-start;gap:6px}"
 ".sh>.msg{flex:1;margin:5px 0}"
 ".rf{flex-shrink:0;margin:5px 0;width:auto}"
 ".rib{width:36px;height:36px;padding:7px;border-radius:.3rem;line-height:1}"

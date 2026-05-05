@@ -1553,6 +1553,7 @@ String WiFiManager::getHTTPHead(String title, String classes){
   page += FPSTR(HTTP_HEAD_START);
   page.replace(FPSTR(T_v), title);
   page += FPSTR(HTTP_SCRIPT);
+  page += FPSTR(HTTP_SPA_SCRIPT);
   page += FPSTR(HTTP_STYLE);
   page += _customHeadElement;
 
@@ -1641,6 +1642,7 @@ void WiFiManager::handleRoot() {
   page += FPSTR(HTTP_PORTAL_OPTIONS);
   page += getMenuOut();
   reportStatus(page);
+  page += FPSTR(HTTP_NAV_BOTTOM);
   page += getHTTPEnd();
 
   HTTPSend(page);
@@ -1746,6 +1748,7 @@ void WiFiManager::handleParam(){
   page += FPSTR(HTTP_FORM_END);
   if(_showBack) page += FPSTR(HTTP_BACKBTN);
   reportStatus(page);
+  page += FPSTR(HTTP_NAV_BOTTOM);
   page += getHTTPEnd();
 
   HTTPSend(page);
@@ -2306,6 +2309,7 @@ void WiFiManager::handleWifiSave() {
     provPage.replace(F("{svgF}"), _customFailureSVG    ? _customFailureSVG    : "");
     page += provPage;
     if(_showBack) page += FPSTR(HTTP_BACKBTN);
+    page += FPSTR(HTTP_NAV_BOTTOM);
     page += getHTTPEnd();
     HTTPSend(page);
     #ifdef WM_DEBUG_LEVEL
@@ -2353,6 +2357,7 @@ void WiFiManager::handleParamSave() {
   String page = getHTTPHead(FPSTR(S_titleparamsaved), FPSTR(C_param)); // @token titleparamsaved
   page += FPSTR(HTTP_PARAMSAVED);
   if(_showBack) page += FPSTR(HTTP_BACKBTN); 
+  page += FPSTR(HTTP_NAV_BOTTOM);
   page += getHTTPEnd();
 
   HTTPSend(page);
@@ -2510,6 +2515,7 @@ void WiFiManager::handleInfo() {
   if(_showInfoErase) page += FPSTR(HTTP_ERASEBTN);
   if(_showBack) page += FPSTR(HTTP_BACKBTN);
   page += FPSTR(HTTP_HELP);
+  page += FPSTR(HTTP_NAV_BOTTOM);
   page += getHTTPEnd();
 
   HTTPSend(page);
