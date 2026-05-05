@@ -59,11 +59,11 @@ const char * const HTTP_PORTAL_MENU[] PROGMEM = {
 const char HTTP_PORTAL_OPTIONS[]   PROGMEM = "";
 const char HTTP_ITEM_QI[]          PROGMEM = "<div role='img' aria-label='{r}%' title='{r}%' class='q q-{q} {i} {h}'></div>"; // rssi icons
 const char HTTP_ITEM_QP[]          PROGMEM = "<div class='q {h}'>{r}%</div>"; // rssi percentage {h} = hidden showperc pref
-const char HTTP_ITEM[]             PROGMEM = "<div><a href='#p' onclick='c(this)' data-ssid='{V}'>{v}</a>{qi}{qp}</div>"; // {q} = HTTP_ITEM_QI, {r} = HTTP_ITEM_QP
+const char HTTP_ITEM[]             PROGMEM = "<div><a href='#p' onclick='c(this)' data-ssid='{V}' class='wi'>{v}</a>{qi}{qp}</div>"; // {q} = HTTP_ITEM_QI, {r} = HTTP_ITEM_QP
 // const char HTTP_ITEM[]            PROGMEM = "<div><a href='#p' onclick='c(this)'>{v}</a> {R} {r}% {q} {e}</div>"; // test all tokens
 
 const char HTTP_FORM_START[]       PROGMEM = "<form method='POST' action='{v}'>";
-const char HTTP_FORM_WIFI[]        PROGMEM = "<label for='s'>Network Name</label><input id='s' name='s' maxlength='32' autocorrect='off' autocapitalize='none' placeholder='{v}' pattern='^[^!#;+\\/\\[\\]\"\\s].{0,31}$' title='Network name (1-32 chars, first character cannot be a space or !#;+/[]\")'><br/><label for='p'>Password</label><div class='pw-wrap'><input id='p' name='p' maxlength='64' type='password' placeholder='{p}' pattern='^.{8,63}$' title='WiFi password must be between 8 and 63 characters (leave empty for open networks).'><button type='button' class='pw-btn' onclick='f()' aria-label='Show or hide password'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='currentColor'><path d='M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z'/></svg></button></div><br/>";
+const char HTTP_FORM_WIFI[]        PROGMEM = "<label for='s'>Network Name</label><input id='s' name='s' maxlength='32' autocorrect='off' autocapitalize='none' value='{v}' pattern='^[^!#;+\\/\\[\\]\"\\s].{0,31}$' title='Network name (1-32 chars, first character cannot be a space or !#;+/[]\")'><br/><label for='p'>Password</label><div class='pw-wrap'><input id='p' name='p' maxlength='64' type='password' value='{p}' autocomplete='off' pattern='^.{8,63}$' title='WiFi password must be between 8 and 63 characters (leave empty for open networks).'><button type='button' class='pw-btn' onclick='f()' aria-label='Show or hide password'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='currentColor'><path d='M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z'/></svg></button></div><br/>";
 const char HTTP_FORM_WIFI_END[]    PROGMEM = "";
 const char HTTP_FORM_STATIC_HEAD[] PROGMEM = "<hr><br/>";
 const char HTTP_FORM_END[]         PROGMEM = "<br/><br/><button type='submit'>Save</button></form>";
@@ -81,6 +81,7 @@ const char HTTP_SAVED_PROVISIONING[] PROGMEM =
   "<div id='wm-svg-s' style='display:none;text-align:center;margin:8px 0'>{svgS}</div>"
   "<div id='wm-svg-f' style='display:none;text-align:center;margin:8px 0'>{svgF}</div>"
   "<div class='msg' id='wm-prov-msg'><span class='sp'></span>&nbsp;Connecting&hellip;<br/><small id='wm-prov-status'>Please wait</small></div>"
+  "<div id='wm-prov-btns'></div>"
   "<script>"
   "function wmSvg(id){"
     "['wm-svg-c','wm-svg-s','wm-svg-f'].forEach(function(i){"
@@ -91,23 +92,26 @@ const char HTTP_SAVED_PROVISIONING[] PROGMEM =
   "function wmPoll(){"
     "fetch('/status').then(function(r){return r.json();}).then(function(d){"
       "var m=document.getElementById('wm-prov-msg');"
+      "var b=document.getElementById('wm-prov-btns');"
       "if(d.state==='connected'){"
         "wmSvg('wm-svg-s');"
         "m.className='msg S';"
         "m.innerHTML='<strong>Connected!</strong><br/><small>Network: <b>'+d.ssid+'</b><br/>IP: '+d.ip+(d.hostname?'&nbsp;&nbsp;'+d.hostname:'')+'</small>';"
         "var shut=d.apShutdownIn?'<br/><small>Setup mode closes in '+Math.ceil(d.apShutdownIn/1000)+'s</small>':'';"
         "m.innerHTML+=shut;"
-        "m.innerHTML+='<br/><form action=\"/exit\" method=\"get\"><button type=\"submit\">Close setup</button></form>';"
+        "b.innerHTML='<br/><form action=\"/exit\" method=\"get\"><button type=\"submit\">Close setup</button></form>';"
       "}else if(d.state==='failed'){"
         "wmSvg('wm-svg-f');"
         "var reason=d.error||'Check your settings and try again.';"
         "var ssidTxt=d.ssid?'<b>'+d.ssid+'</b>':'the network';"
         "m.className='msg D';"
-        "m.innerHTML='<strong>Could not connect</strong><br/><small>'+reason+'<br/>Network: '+ssidTxt+'</small><br/><form action=\"/wifi\" method=\"get\"><button type=\"submit\">Change settings &amp; try again</button></form>';"
+        "m.innerHTML='<strong>Could not connect</strong><br/><small>'+reason+'<br/>Network: '+ssidTxt+'</small>';"
+        "b.innerHTML='<br/><form action=\"/wifi\" method=\"get\"><button type=\"submit\">Change settings</button></form>';"
       "}else if(d.state==='connecting'){"
         "wmSvg('wm-svg-c');"
         "m.className='msg';"
         "m.innerHTML='<span class=\"sp\"></span>&nbsp;Connecting to <b>'+d.ssid+'</b>&hellip;<br/><small id=\"wm-prov-status\">'+new Date().toLocaleTimeString()+'</small>';"
+        "b.innerHTML='';"
         "setTimeout(wmPoll,1500);"
       "}else{"
         "var s=document.getElementById('wm-prov-status');"
@@ -242,6 +246,8 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 ".rib{width:36px;height:36px;padding:7px;border-radius:.3rem;line-height:1}"
 // scrollable wifi network list
 ".wl{max-height:40vh;overflow-y:auto;border:1px solid #eee;border-radius:.3rem;margin:5px 0}"
+// make SSID anchor fill the whole row (left of quality icons) so the whole area is tappable
+".wl>div>a.wi{flex:1;min-width:0;padding:4px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
 // network list item: padding + hairline separator (like iOS / Premiere Pro)
 ".wl>div{padding:10px 12px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between}"
 ".wl>div:last-child{border-bottom:none}"

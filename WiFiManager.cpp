@@ -1680,10 +1680,18 @@ void WiFiManager::handleWifi(boolean scan) {
   page += pitem;
 
   pitem = FPSTR(HTTP_FORM_WIFI);
-  pitem.replace(FPSTR(T_v), WiFi_SSID());
 
-  if(_showPassword){
-    pitem.replace(FPSTR(T_p), WiFi_psk());
+  // After a failed provisioning attempt pre-fill with the last-tried credentials so
+  // the user can review (and reveal) exactly what was submitted.  Otherwise fall back
+  // to any saved SSID so the field is not empty.
+  String formSSID = (_provisioningState == WM_PROV_FAILED && _ssid != "") ? _ssid : WiFi_SSID();
+  pitem.replace(FPSTR(T_v), htmlEntities(formSSID));
+
+  if(_provisioningState == WM_PROV_FAILED && _pass != "") {
+    // Pre-fill with last-tried password (masked by type=password; eye button reveals it)
+    pitem.replace(FPSTR(T_p), htmlEntities(_pass));
+  } else if(_showPassword) {
+    pitem.replace(FPSTR(T_p), htmlEntities(WiFi_psk()));
   }
   else if(WiFi_psk() != ""){
     pitem.replace(FPSTR(T_p),FPSTR(S_passph));    
