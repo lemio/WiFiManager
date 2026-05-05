@@ -112,26 +112,26 @@ void ledOff() {
 bool ledPulsing = false;
 
 // LED state callback – invoked by WiFiManager on every state change
-void onLEDState(WiFiManager::wm_ledstate_t state) {
+void onLEDState(wm_ledstate_t state) {
   ledPulsing = false;
   switch (state) {
-    case WiFiManager::WM_LED_NOWIFI:
+    case WM_LED_NOWIFI:
       ledSolid(255, 100, 0);   // Orange: no WiFi configured
       Serial.println(F("[LED] Orange – no WiFi configured"));
       break;
-    case WiFiManager::WM_LED_CONNECTING:
+    case WM_LED_CONNECTING:
       ledPulsing = true;       // Blue pulsing: will be updated in loop()
       Serial.println(F("[LED] Blue pulsing – connecting"));
       break;
-    case WiFiManager::WM_LED_CONNECTED:
+    case WM_LED_CONNECTED:
       ledSolid(0, 200, 0);     // Green: connected
       Serial.println(F("[LED] Green – connected"));
       break;
-    case WiFiManager::WM_LED_FAILED:
+    case WM_LED_FAILED:
       ledSolid(220, 0, 0);     // Red: connection failed
       Serial.println(F("[LED] Red – connection failed"));
       break;
-    case WiFiManager::WM_LED_OFF:
+    case WM_LED_OFF:
       ledOff();                // Timeout elapsed: LED off
       Serial.println(F("[LED] Off"));
       break;
@@ -155,6 +155,7 @@ void setup() {
   wm.setAPShutdownDelay(AP_SHUTDOWN_DELAY_MS);  // Shut down AP 15 s after success
   wm.setDetailedFailureReasons(true);           // Show "Wrong password" etc.
   wm.setCaptivePortalCompatibility(true);       // Android/iOS/Windows auto-open (default)
+  wm.setShowPassword(true);
 
   // ---- LED callback ----
   wm.setLEDCallback(onLEDState);
