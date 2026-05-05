@@ -34,7 +34,7 @@ const char HTTP_SCRIPT[]           PROGMEM = "<script>function c(l){"
 "p = l.nextElementSibling.classList.contains('l');"
 "document.getElementById('p').disabled = !p;"
 "if(p)document.getElementById('p').focus();};"
-"function f() {var x = document.getElementById('p');x.type==='password'?x.type='text':x.type='password';}"
+"function f() {document.getElementById('p').classList.toggle('pw-masked');}"
 "</script>"; // @todo add button states, disable on click , show ack , spinner etc
 
 const char HTTP_HEAD_END[]         PROGMEM = "</head><body class='{c}'><div class='wrap'>"; // {c} = _bodyclass
@@ -63,7 +63,7 @@ const char HTTP_ITEM[]             PROGMEM = "<div><a href='#p' onclick='c(this)
 // const char HTTP_ITEM[]            PROGMEM = "<div><a href='#p' onclick='c(this)'>{v}</a> {R} {r}% {q} {e}</div>"; // test all tokens
 
 const char HTTP_FORM_START[]       PROGMEM = "<form method='POST' action='{v}'>";
-const char HTTP_FORM_WIFI[]        PROGMEM = "<label for='s'>Network Name</label><input id='s' name='s' maxlength='32' autocorrect='off' autocapitalize='none' value='{v}' pattern='^[^!#;+\\/\\[\\]\"\\s].{0,31}$' title='Network name (1-32 chars, first character cannot be a space or !#;+/[]\")'><br/><label for='p'>Password</label><div class='pw-wrap'><input id='p' name='p' maxlength='64' type='password' value='{p}' autocomplete='off' pattern='^.{8,63}$' title='WiFi password must be between 8 and 63 characters (leave empty for open networks).'><button type='button' class='pw-btn' onclick='f()' aria-label='Show or hide password'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='currentColor'><path d='M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z'/></svg></button></div><br/>";
+const char HTTP_FORM_WIFI[]        PROGMEM = "<label for='s'>Network Name</label><input id='s' name='s' maxlength='32' autocorrect='off' autocapitalize='none' value='{v}' pattern='^[^!#;+\\/\\[\\]\"\\s].{0,31}$' title='Network name (1-32 chars, first character cannot be a space or !#;+/[]\")'><br/><label for='p'>Password</label><div class='pw-wrap'><input id='p' name='p' maxlength='64' type='text' class='pw-masked' value='{p}' autocomplete='off' pattern='^.{8,63}$' title='WiFi password must be between 8 and 63 characters (leave empty for open networks).'><button type='button' class='pw-btn' onclick='f()' aria-label='Show or hide password'><svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' width='18' height='18' fill='currentColor'><path d='M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z'/></svg></button></div><br/>";
 const char HTTP_FORM_WIFI_END[]    PROGMEM = "";
 const char HTTP_FORM_STATIC_HEAD[] PROGMEM = "<hr><br/>";
 const char HTTP_FORM_END[]         PROGMEM = "<br/><br/><button type='submit'>Save</button></form>";
@@ -239,6 +239,7 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 ".pw-wrap{position:relative;padding:0;margin:0}"
 ".pw-wrap>input{padding-right:40px}"
 ".pw-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:none;border:none;padding:6px;cursor:pointer;width:36px;line-height:1;color:#888}"
+".pw-masked{text-security:disc;-webkit-text-security:disc;-moz-text-security:disc;}"
 // status + refresh icon flex row
 ".sh{display:flex;align-items:flex-start;gap:6px}"
 ".sh>.msg{flex:1;margin:5px 0}"
