@@ -102,10 +102,11 @@ const char HTTP_SAVED_PROVISIONING[] PROGMEM =
         "b.innerHTML='<br/><form action=\"/exit\" method=\"get\"><button type=\"submit\">Close setup</button></form>';"
       "}else if(d.state==='failed'){"
         "wmSvg('wm-svg-f');"
-        "var reason=d.error||'Check your settings and try again.';"
-        "var ssidTxt=d.ssid?'<b>'+d.ssid+'</b>':'the network';"
+        "var lr=d.lastResult||'';"
+        "var title=lr==='wrong_password'?'Wrong password':lr==='not_found'?'Network not found':'Could not connect';"
+        "var sub=lr==='wrong_password'?'Please re-enter the password for <b>'+d.ssid+'</b> and try again.':lr==='not_found'?'<b>'+d.ssid+'</b> was not found. Move closer and try again.':'Could not reach <b>'+d.ssid+'</b>. Check your settings and try again.';"
         "m.className='msg D';"
-        "m.innerHTML='<strong>Could not connect</strong><br/><small>'+reason+'<br/>Network: '+ssidTxt+'</small>';"
+        "m.innerHTML='<strong>'+title+'</strong><br/><small>'+sub+'</small>';"
         "b.innerHTML='<br/><form action=\"/wifi\" method=\"get\"><button type=\"submit\">Change settings</button></form>';"
       "}else if(d.state==='connecting'){"
         "wmSvg('wm-svg-c');"
@@ -166,7 +167,7 @@ const char HTTP_STATUS_LIVE_SCRIPT[] PROGMEM =
           "e.innerHTML='<strong>Connected</strong> to <b>'+d.ssid+'</b><br/><small>IP\u00a0'+d.ip+q+'</small>';"
         "}else if(c>1&&d.lastResult==='wrong_password'){"
           "e.className='msg D';"
-          "e.innerHTML='<strong>Wrong password</strong><br/><small>Could not connect to <b>'+d.ssid+'</b>.<br/>Please enter the correct password and try again.</small>';"
+          "e.innerHTML='<strong>Wrong password</strong><br/><small>Check the password for <b>'+d.ssid+'</b> and try again.</small>';"
           "markPwErr();"
         "}else if(c>1&&d.lastResult==='not_found'){"
           "e.className='msg D';"
@@ -203,7 +204,7 @@ const char HTTP_STATUS_ON[]        PROGMEM = "<div class='msg S' id='wm-live-sta
 const char HTTP_STATUS_OFF[]       PROGMEM = "<div class='msg {c}' id='wm-live-status'><strong>Not connected</strong> to {v}{r}</div>"; // {c=class} {v=ssid} {r=status_off}
 const char HTTP_STATUS_OFFPW[]     PROGMEM = "<br/>Wrong password"; // STATION_WRONG_PASSWORD
 const char HTTP_STATUS_OFFNOAP[]   PROGMEM = "<br/>Network not found";   // WL_NO_SSID_AVAIL
-const char HTTP_STATUS_OFFFAIL[]   PROGMEM = "<br/>Could not connect"; // WL_CONNECT_FAILED
+const char HTTP_STATUS_OFFFAIL[]   PROGMEM = "<br/>Check your settings"; // WL_CONNECT_FAILED
 const char HTTP_STATUS_NONE[]      PROGMEM = "<div class='msg' id='wm-live-status'>No WiFi network configured</div>";
 const char HTTP_BR[]               PROGMEM = "<br/>";
 
@@ -251,7 +252,7 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 ".pw-btn{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:none;border:none;padding:6px;cursor:pointer;width:36px;line-height:1;color:#888}"
 ".pw-masked{-webkit-text-security:disc;-moz-text-security:disc;}"
 // status + refresh icon flex row
-".sh{display:flex;align-items:flex-start;gap:6px}"
+".sh{display:flex;align-items:flex-start;gap:6px;width:100%}"
 ".sh>.msg{flex:1;margin:5px 0}"
 ".rf{flex-shrink:0;margin:5px 0;width:auto}"
 ".rib{width:36px;height:36px;padding:7px;border-radius:.3rem;line-height:1}"
