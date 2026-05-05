@@ -152,6 +152,8 @@ const char HTTP_STATUS_LIVE_SCRIPT[] PROGMEM =
   "<script>"
   "(function(){"
     "var c=0;"
+    // highlight the password field (wrong-password error feedback)
+    "function markPwErr(){var p=document.getElementById('p');if(p)p.classList.add('input-error');}"
     "function g(){"
       "fetch('/status').then(function(r){return r.json();})"
       ".then(function(d){"
@@ -165,6 +167,7 @@ const char HTTP_STATUS_LIVE_SCRIPT[] PROGMEM =
         "}else if(c>1&&d.lastResult==='wrong_password'){"
           "e.className='msg D';"
           "e.innerHTML='<strong>Wrong password</strong><br/><small>Could not connect to <b>'+d.ssid+'</b>.<br/>Please enter the correct password and try again.</small>';"
+          "markPwErr();"
         "}else if(c>1&&d.lastResult==='not_found'){"
           "e.className='msg D';"
           "e.innerHTML='<strong>Network not found</strong><br/><small><b>'+d.ssid+'</b> is not in range. Move closer or choose a different network.</small>';"
@@ -186,8 +189,11 @@ const char HTTP_STATUS_LIVE_SCRIPT[] PROGMEM =
       "})"
       ".catch(function(){setTimeout(g,9000);});"
     "}"
-    // immediately replace static status with spinner, then start polling
+    // If the server-rendered banner already shows a wrong-password error, highlight
+    // the password field immediately (before the spinner replaces the static content).
     "var e=document.getElementById('wm-live-status');"
+    "if(e&&e.classList.contains('D')&&e.textContent.indexOf('Wrong')!==-1){markPwErr();}"
+    // Replace static status with spinner, then start polling
     "if(e){e.className='msg';e.innerHTML='<span class=\"sp\"></span>&nbsp;Checking connection\u2026';}"
     "setTimeout(g,1500);"
   "})();"
@@ -202,9 +208,9 @@ const char HTTP_STATUS_NONE[]      PROGMEM = "<div class='msg' id='wm-live-statu
 const char HTTP_BR[]               PROGMEM = "<br/>";
 
 const char HTTP_STYLE[]            PROGMEM = "<style>"
-".c,body,h1,h3{text-align:center;font-family:verdana}div,input,select{padding:5px;font-size:1em;margin:5px 0;box-sizing:border-box}"
+".c,body,h1,h3{text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}div,input,select{padding:5px;font-size:1em;margin:5px 0;box-sizing:border-box}"
 "input,button,select,.msg{border-radius:.3rem;width: 100%}input[type=radio],input[type=checkbox]{width:auto}"
-"button,input[type='button'],input[type='submit']{cursor:pointer;border:0;background-color:#1fa3ec;color:#fff;line-height:2.4rem;font-size:1.2rem;width:100%}"
+"button,input[type='button'],input[type='submit']{cursor:pointer;border:0;background-color:#1fa3ec;color:#fff;line-height:2.75rem;font-size:1.2rem;width:100%}"
 "input[type='file']{border:1px solid #1fa3ec}"
 ".wrap {text-align:left;display:inline-block;min-width:260px;max-width:500px}"
 ".footer {position: fixed; text-align: center; bottom: 0; width: 100%}"
@@ -219,6 +225,10 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
 "background-size: 95px 16px;}}"
 // msg callouts
 ".msg{padding:20px;margin:20px 0;border:1px solid #eee;border-left-width:5px;border-left-color:#777}.msg h4{margin-top:0;margin-bottom:5px}.msg.P{border-left-color:#1fa3ec}.msg.P h4{color:#1fa3ec}.msg.D{border-left-color:#dc3630}.msg.D h4{color:#dc3630}.msg.S{border-left-color: #5cb85c}.msg.S h4{color: #5cb85c}"
+// status banner: reserve space for the tallest error so the layout doesn't jump
+"#wm-live-status{min-height:110px}"
+// highlight input when password is wrong
+".input-error{border-color:#dc3630!important;box-shadow:0 0 0 3px rgba(220,54,48,.15)!important}"
 // lists
 "dt{font-weight:bold}dd{margin:0;padding:0 0 0.5em 0;min-height:12px}"
 "td{vertical-align: top;}"
@@ -274,6 +284,7 @@ const char HTTP_STYLE[]            PROGMEM = "<style>"
   ".wl>div{border-bottom-color:#333}"
   "input,select{background-color:#1a1a1a;color:#fff;border:1px solid #444}"
   ".pw-btn{color:#aaa}"
+  ".input-error{box-shadow:0 0 0 3px rgba(220,54,48,.3)!important}"
 "}"
 "</style>";
 
@@ -406,7 +417,7 @@ const char S_staticip[]           PROGMEM = "Static IP";
 const char S_staticgw[]           PROGMEM = "Static gateway";
 const char S_staticdns[]          PROGMEM = "Static DNS";
 const char S_subnet[]             PROGMEM = "Subnet";
-const char S_exiting[]            PROGMEM = "Exiting";
+const char S_exiting[]            PROGMEM = "<div class='msg' style='text-align:center'><span class='sp'></span>&nbsp;<strong>Closing setup&hellip;</strong><br/><small style='color:#888'>You can close this window</small></div><script>setTimeout(function(){try{window.close();}catch(e){}},600);</script>";
 const char S_resetting[]          PROGMEM = "Module will reset in a few seconds.";
 const char S_closing[]            PROGMEM = "You can close the page, portal will continue to run";
 const char S_error[]              PROGMEM = "An error occured";
