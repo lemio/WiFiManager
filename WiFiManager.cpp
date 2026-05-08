@@ -343,6 +343,7 @@ boolean WiFiManager::autoConnect(char const *apName, char const *apPassword) {
       DEBUG_WM(F("AutoConnect: ESP Already Connected"));
       #endif
       setSTAConfig();
+      setLEDState(WM_LED_CONNECTED); // already connected – set LED
       // @todo not sure if this is safe, causes dup setSTAConfig in connectwifi,
       // and we have no idea WHAT we are connected to
     }
@@ -772,6 +773,15 @@ boolean  WiFiManager::startConfigPortal(char const *apName, char const *apPasswo
   startAP();
   WiFiSetCountry();
 
+  // Set LED state: NOWIFI when no credentials are saved; if credentials exist but the
+  // LED is not already active (e.g. manual portal start), use FAILED to signal a
+  // configuration problem (credentials stored but connection could not be established).
+  if(!WiFi_hasAutoConnect()) {
+    setLEDState(WM_LED_NOWIFI);
+  } else if(_ledCurrentState == WM_LED_OFF) {
+    setLEDState(WM_LED_FAILED);
+  }
+
   // do AP callback if set
   if ( _apcallback != NULL) {
     #ifdef WM_DEBUG_LEVEL
@@ -857,7 +867,11 @@ boolean WiFiManager::process(){
     #if defined(WM_MDNS) && defined(ESP8266)
     MDNS.update();
     #endif
-	
+
+    // Always drive the LED state machine so timeouts fire and the LED
+    // stays accurate even when the config portal is not active.
+    syncLEDState();
+
     if(webPortalActive || (configPortalActive && !_configPortalIsBlocking)){
       // if timed out or abort, break
       if(_allowExit && (configPortalHasTimeout() || abort)){
@@ -889,6 +903,9 @@ boolean WiFiManager::process(){
  * @return {[type]} [description]
  */
 uint8_t WiFiManager::processConfigPortal(){
+    // Check LED timeout and reconcile with WiFi status on every iteration.
+    syncLEDState();
+
     if(configPortalActive){
       //DNS handler
       dnsServer->processNextRequest();
@@ -1276,6 +1293,8 @@ uint8_t WiFiManager::connectWifi(String ssid, String pass, bool connect) {
   uint8_t retry = 1;
   uint8_t connRes = (uint8_t)WL_NO_SSID_AVAIL;
 
+  setLEDState(WM_LED_CONNECTING);
+
   setSTAConfig();
   //@todo catch failures in set_config
   
@@ -1466,6 +1485,13 @@ void WiFiManager::updateConxResult(uint8_t status){
       }
     DEBUG_WM(WM_DEBUG_DEV,F("lastconxresult:"),getWLStatusString(_lastconxresult));
     #endif
+
+  // Update LED state based on connection result
+  if(_lastconxresult == WL_CONNECTED) {
+    setLEDState(WM_LED_CONNECTED);
+  } else if(_lastconxresult != WL_IDLE_STATUS) {
+    setLEDState(WM_LED_FAILED);
+  }
 }
 
  
@@ -1619,6 +1645,7 @@ void WiFiManager::handleRoot() {
   page += FPSTR(HTTP_PORTAL_OPTIONS);
   page += getMenuOut();
   reportStatus(page);
+  page += FPSTR(HTTP_NAV_BOTTOM);
   page += getHTTPEnd();
 
   HTTPSend(page);
@@ -1658,16 +1685,24 @@ void WiFiManager::handleWifi(boolean scan) {
   page += pitem;
 
   pitem = FPSTR(HTTP_FORM_WIFI);
-  pitem.replace(FPSTR(T_v), WiFi_SSID());
 
-  if(_showPassword){
-    pitem.replace(FPSTR(T_p), WiFi_psk());
-  }
-  else if(WiFi_psk() != ""){
-    pitem.replace(FPSTR(T_p),FPSTR(S_passph));    
+  // After a failed provisioning attempt pre-fill with the last-tried credentials so
+  // the user can review (and reveal) exactly what was submitted.  Otherwise fall back
+  // to any saved SSID so the field is not empty.
+  String formSSID = (_provisioningState == WM_PROV_FAILED && !_ssid.isEmpty()) ? _ssid : WiFi_SSID();
+  pitem.replace(FPSTR(T_v), htmlEntities(formSSID));
+
+  if(_provisioningState == WM_PROV_FAILED && !_pass.isEmpty()) {
+    // Pre-fill with last-tried password (masked by type=password; eye button reveals it)
+    pitem.replace(FPSTR(T_p), htmlEntities(_pass));
+  } else if(_showPassword) {
+    pitem.replace(FPSTR(T_p), htmlEntities(WiFi_psk()));
   }
   else {
-    pitem.replace(FPSTR(T_p),"");    
+    // Leave empty – the S_passph sentinel ("********") cannot be
+    // toggled with the eye button to reveal the real password, so we
+    // just leave the field blank and let the user type it again.
+    pitem.replace(FPSTR(T_p),"");
   }
 
   page += pitem;
@@ -1716,6 +1751,7 @@ void WiFiManager::handleParam(){
   page += FPSTR(HTTP_FORM_END);
   if(_showBack) page += FPSTR(HTTP_BACKBTN);
   reportStatus(page);
+  page += FPSTR(HTTP_NAV_BOTTOM);
   page += getHTTPEnd();
 
   HTTPSend(page);
@@ -2255,6 +2291,8 @@ void WiFiManager::handleWifiSave() {
     _startconn              = millis();
     _ipWaitStart            = 0; // reset DHCP-wait timer for new attempt
 
+    setLEDState(WM_LED_CONNECTING); // signal LED: connecting
+
     // Apply static IP config if set
     setSTAConfig();
 
@@ -2266,9 +2304,15 @@ void WiFiManager::handleWifiSave() {
     WiFi.persistent(false);
 
     // Return the provisioning status page which polls /status via JS
+    // Replace custom SVG tokens before sending.
     String page = getHTTPHead(FPSTR(S_titlewifisaved), FPSTR(C_wifi));
-    page += FPSTR(HTTP_SAVED_PROVISIONING);
+    String provPage = FPSTR(HTTP_SAVED_PROVISIONING);
+    provPage.replace(F("{svgC}"), _customConnectingSVG ? _customConnectingSVG : "");
+    provPage.replace(F("{svgS}"), _customSuccessSVG    ? _customSuccessSVG    : "");
+    provPage.replace(F("{svgF}"), _customFailureSVG    ? _customFailureSVG    : "");
+    page += provPage;
     if(_showBack) page += FPSTR(HTTP_BACKBTN);
+    page += FPSTR(HTTP_NAV_BOTTOM);
     page += getHTTPEnd();
     HTTPSend(page);
     #ifdef WM_DEBUG_LEVEL
@@ -2316,6 +2360,7 @@ void WiFiManager::handleParamSave() {
   String page = getHTTPHead(FPSTR(S_titleparamsaved), FPSTR(C_param)); // @token titleparamsaved
   page += FPSTR(HTTP_PARAMSAVED);
   if(_showBack) page += FPSTR(HTTP_BACKBTN); 
+  page += FPSTR(HTTP_NAV_BOTTOM);
   page += getHTTPEnd();
 
   HTTPSend(page);
@@ -2473,6 +2518,7 @@ void WiFiManager::handleInfo() {
   if(_showInfoErase) page += FPSTR(HTTP_ERASEBTN);
   if(_showBack) page += FPSTR(HTTP_BACKBTN);
   page += FPSTR(HTTP_HELP);
+  page += FPSTR(HTTP_NAV_BOTTOM);
   page += getHTTPEnd();
 
   HTTPSend(page);
@@ -4322,6 +4368,18 @@ String WiFiManager::WiFi_psk(bool persistent) const {
         #endif
         WiFi.reconnect();
       #endif
+      // LED: show FAILED on disconnect, but ignore the spurious disconnect that
+      // WiFi.begin(connect=false) / AP teardown fires during a successful provisioning
+      // save – _provisioningState is CONNECTED from the moment we confirm the STA link
+      // until the portal fully closes.
+      if(_provisioningState != WM_PROV_CONNECTED) {
+        setLEDState(WM_LED_FAILED);
+      }
+  }
+  else if(event == ARDUINO_EVENT_WIFI_STA_GOT_IP){
+    // LED: STA obtained an IP – this covers autonomous reconnects as well as
+    // initial provisioning, overriding whatever state the LED was in.
+    setLEDState(WM_LED_CONNECTED);
   }
   else if(event == ARDUINO_EVENT_WIFI_SCAN_DONE && _asyncScan){
     uint16_t scans = WiFi.scanComplete();
@@ -4333,6 +4391,24 @@ String WiFiManager::WiFi_psk(bool persistent) const {
 void WiFiManager::WiFi_autoReconnect(){
   #ifdef ESP8266
     WiFi.setAutoReconnect(_wifiAutoReconnect);
+    // Register persistent WiFi event handlers so the LED is updated whenever
+    // the network connects or disconnects autonomously (router restart,
+    // device moves in/out of range, password changed on router, etc.).
+    // The WiFiEventHandler objects are stored as members to keep them alive.
+    if(!_wifiGotIPHandler) {
+      _wifiGotIPHandler = WiFi.onStationModeGotIP([this](const WiFiEventStationModeGotIP&) {
+        setLEDState(WM_LED_CONNECTED);
+      });
+    }
+    if(!_wifiDisconnectedHandler) {
+      _wifiDisconnectedHandler = WiFi.onStationModeDisconnected([this](const WiFiEventStationModeDisconnected&) {
+        // Ignore the spurious disconnect fired by WiFi.begin(connect=false) / AP teardown
+        // during a successful provisioning save.
+        if(_provisioningState != WM_PROV_CONNECTED) {
+          setLEDState(WM_LED_FAILED);
+        }
+      });
+    }
   #elif defined(ESP32)
     // if(_wifiAutoReconnect){
       // @todo move to seperate method, used for event listener now
@@ -4491,3 +4567,156 @@ void WiFiManager::handleUpdateDone() {
 }
 
 #endif
+
+// ---------------------------------------------------------------------------
+// LED behaviour
+// ---------------------------------------------------------------------------
+
+/**
+ * setLEDCallback
+ * Register a function to be called whenever the LED state changes.
+ * The callback receives a wm_ledstate_t:
+ *   WM_LED_OFF        – LED should be turned off (timeout elapsed)
+ *   WM_LED_NOWIFI     – No WiFi configured    (suggest: Orange, solid)
+ *   WM_LED_CONNECTED  – WiFi connected        (suggest: Green, solid)
+ *   WM_LED_FAILED     – Connection failed     (suggest: Red, solid)
+ *   WM_LED_CONNECTING – Connecting in progress (suggest: Blue, pulsing)
+ */
+void WiFiManager::setLEDCallback(std::function<void(wm_ledstate_t)> func) {
+  _ledcallback = func;
+}
+
+/** Set how long (ms) the LED stays on for the "no WiFi configured" state. 0 = infinite. */
+void WiFiManager::setLEDTimeoutNoWifi(unsigned long ms) {
+  _ledTimeoutNoWifi = ms;
+}
+
+/** Set how long (ms) the LED stays on after a successful WiFi connection. 0 = infinite. */
+void WiFiManager::setLEDTimeoutConnected(unsigned long ms) {
+  _ledTimeoutConnected = ms;
+}
+
+/** Set how long (ms) the LED stays on after a failed connection attempt. 0 = infinite. */
+void WiFiManager::setLEDTimeoutFailed(unsigned long ms) {
+  _ledTimeoutFailed = ms;
+}
+
+/** Set how long (ms) the LED stays on while a connection attempt is in progress. 0 = infinite. */
+void WiFiManager::setLEDTimeoutConnecting(unsigned long ms) {
+  _ledTimeoutConnecting = ms;
+}
+
+/**
+ * setLEDState (private)
+ * Transition to a new LED state, reset the timeout timer, and invoke the
+ * user callback.  Calling with the same state that is already active is a
+ * no-op (avoids flooding the callback on every processConfigPortal tick).
+ */
+void WiFiManager::setLEDState(wm_ledstate_t state) {
+  if(_ledcallback == nullptr) return;
+  if(state == _ledCurrentState) return;
+  _ledCurrentState = state;
+  _ledStateStart   = millis();
+  _ledcallback(state);
+}
+
+/**
+ * checkLEDTimeout (private)
+ * If the current LED state has been active for longer than its configured
+ * timeout (and the timeout is > 0), transition to WM_LED_OFF.
+ * Called from processConfigPortal() on every iteration.
+ */
+void WiFiManager::checkLEDTimeout() {
+  if(_ledcallback == nullptr) return;
+  if(_ledCurrentState == WM_LED_OFF) return;
+
+  unsigned long timeout = 0;
+  switch(_ledCurrentState) {
+    case WM_LED_NOWIFI:     timeout = _ledTimeoutNoWifi;     break;
+    case WM_LED_CONNECTED:  timeout = _ledTimeoutConnected;  break;
+    case WM_LED_FAILED:     timeout = _ledTimeoutFailed;     break;
+    case WM_LED_CONNECTING: timeout = _ledTimeoutConnecting; break;
+    default: return;
+  }
+
+  if(timeout > 0 && (millis() - _ledStateStart) >= timeout) {
+    _ledCurrentState = WM_LED_OFF;
+    _ledcallback(WM_LED_OFF);
+  }
+}
+
+/**
+ * syncLEDState (private)
+ * Should be called regularly from loop() via process() and from processConfigPortal().
+ * Two jobs:
+ *   1. Always run checkLEDTimeout() so the per-state timer fires even when
+ *      the config portal is not active (fixes "OFF never triggered" after autoConnect).
+ *   2. Once per second, correct "stuck on CONNECTING" if WiFi is fully connected
+ *      (WL_CONNECTED + valid IP assigned).  This covers the case where the
+ *      GOT_IP event callback was missed.
+ *
+ * Intentionally NOT done here:
+ *   - Converting CONNECTED → FAILED when WiFi.status() is not WL_CONNECTED.
+ *     WiFi.status() is not a stable signal: DHCP renewal, a background scan
+ *     (ESP8266), or normal beacon-miss recovery can produce a brief
+ *     WL_DISCONNECTED reading even on a healthy link.  Polling that state and
+ *     immediately calling setLEDState(FAILED) causes false-positive red flashes.
+ *     Real disconnects are already handled by the event callbacks registered in
+ *     WiFi_autoReconnect() (onStationModeDisconnected / ARDUINO_EVENT_WIFI_STA_DISCONNECTED).
+ *   - Correcting FAILED/NOWIFI → CONNECTED on an autonomous reconnect.
+ *     Those transitions are also handled by the GOT_IP event callback.
+ */
+void WiFiManager::syncLEDState() {
+  if(_ledcallback == nullptr) return;
+
+  // Always check timeout so WM_LED_CONNECTED (and others) time out correctly
+  // even when the config portal loop is not running.
+  checkLEDTimeout();
+
+  // Rate-limit the WiFi-status poll to once per second.
+  if(millis() - _ledLastPoll < 1000) return;
+  _ledLastPoll = millis();
+
+  // Only correct "stuck on blue": if we are still showing CONNECTING but WiFi
+  // has actually fully connected (status AND a valid IP have both settled),
+  // advance to CONNECTED.
+  // We require a non-zero localIP so we do not fire prematurely during the
+  // DHCP-assignment window that checkProvisioningState() waits through.
+  if(_ledCurrentState == WM_LED_CONNECTING
+     && WiFi.status() == WL_CONNECTED
+     && WiFi.localIP() != IPAddress(0, 0, 0, 0)) {
+    setLEDState(WM_LED_CONNECTED);
+  }
+}
+
+
+
+/**
+ * setCustomConnectingSVG
+ * Set custom SVG (or any HTML) to display on the provisioning status page
+ * while a WiFi connection attempt is in progress.
+ * Pass NULL to remove.
+ */
+void WiFiManager::setCustomConnectingSVG(const char* svg) {
+  _customConnectingSVG = svg;
+}
+
+/**
+ * setCustomSuccessSVG
+ * Set custom SVG (or any HTML) to display on the provisioning status page
+ * when the WiFi connection succeeds.
+ * Pass NULL to remove.
+ */
+void WiFiManager::setCustomSuccessSVG(const char* svg) {
+  _customSuccessSVG = svg;
+}
+
+/**
+ * setCustomFailureSVG
+ * Set custom SVG (or any HTML) to display on the provisioning status page
+ * when the WiFi connection fails.
+ * Pass NULL to remove.
+ */
+void WiFiManager::setCustomFailureSVG(const char* svg) {
+  _customFailureSVG = svg;
+}

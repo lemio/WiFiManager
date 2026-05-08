@@ -265,6 +265,15 @@ class WiFiManagerParameter {
         WM_PROV_RETRYING   = 5  // retrying STA connection
     } wm_provstate_t;
 
+    // LED indicator state for developer-supplied LED callback
+    typedef enum {
+        WM_LED_OFF        = 0, // LED off (timeout elapsed)
+        WM_LED_NOWIFI     = 1, // No wifi configured – suggest Orange (infinite by default)
+        WM_LED_CONNECTED  = 2, // WiFi connected     – suggest Green  (15 s by default)
+        WM_LED_FAILED     = 3, // Connection failed  – suggest Red    (infinite by default)
+        WM_LED_CONNECTING = 4  // Trying to connect  – suggest Blue pulsing (5 s by default)
+    } wm_ledstate_t;
+
 class WiFiManager
 {
   public:
@@ -541,6 +550,32 @@ class WiFiManager
     // get the current provisioning state (see wm_provstate_t)
     wm_provstate_t getProvisioningState();
 
+    // --- LED behaviour ---
+
+    // Set a callback invoked whenever the LED state changes.
+    // The callback receives a wm_ledstate_t value; WM_LED_OFF means the
+    // timeout has elapsed and the LED should be turned off.
+    void          setLEDCallback(std::function<void(wm_ledstate_t)> func);
+
+    // Per-state LED timeout in milliseconds.  0 = stay on indefinitely.
+    // Defaults: NoWifi=0 (infinite), Connected=15000 (15 s),
+    //           Failed=0 (infinite), Connecting=5000 (5 s).
+    void          setLEDTimeoutNoWifi(unsigned long ms);
+    void          setLEDTimeoutConnected(unsigned long ms);
+    void          setLEDTimeoutFailed(unsigned long ms);
+    void          setLEDTimeoutConnecting(unsigned long ms);
+
+    // --- Custom animated SVGs for the provisioning status page ---
+
+    // Set a custom SVG (or any HTML) shown while connecting to WiFi.
+    void          setCustomConnectingSVG(const char* svg);
+
+    // Set a custom SVG (or any HTML) shown on a successful connection.
+    void          setCustomSuccessSVG(const char* svg);
+
+    // Set a custom SVG (or any HTML) shown when the connection failed.
+    void          setCustomFailureSVG(const char* svg);
+
 
     std::unique_ptr<DNSServer>        dnsServer;
 
@@ -628,6 +663,13 @@ class WiFiManager
     static uint8_t _lastconxresulttmp; // tmp var for esp32 callback
     #endif
 
+    #ifdef ESP8266
+    // WiFiEventHandler objects must be kept alive for the duration of the
+    // callback registration; storing them as members achieves this.
+    WiFiEventHandler _wifiGotIPHandler;
+    WiFiEventHandler _wifiDisconnectedHandler;
+    #endif
+
     #ifndef WL_STATION_WRONG_PASSWORD
     static constexpr uint8_t WL_STATION_WRONG_PASSWORD = 7; // @kludge define a WL status for wrong password
     #endif
@@ -660,6 +702,21 @@ class WiFiManager
     const char*   _customMenuHTML         = ""; // store custom menu html from user
     String        _bodyClass              = ""; // class to add to body
     String        _title                  = FPSTR(S_brand); // app title -  default WiFiManager
+
+    // Custom SVG/HTML slots for provisioning status page
+    const char*   _customConnectingSVG    = nullptr; // shown while connecting
+    const char*   _customSuccessSVG       = nullptr; // shown on successful connection
+    const char*   _customFailureSVG       = nullptr; // shown on connection failure
+
+    // LED state callback and per-state timeouts
+    std::function<void(wm_ledstate_t)> _ledcallback = nullptr;
+    unsigned long _ledTimeoutNoWifi       = 0;      // 0 = infinite (orange – no wifi configured)
+    unsigned long _ledTimeoutConnected    = 15000;  // 15 s (green – connected)
+    unsigned long _ledTimeoutFailed       = 0;      // 0 = infinite (red – failed)
+    unsigned long _ledTimeoutConnecting   = 5000;   // 5 s (blue pulsing – connecting)
+    wm_ledstate_t _ledCurrentState        = WM_LED_OFF;
+    unsigned long _ledStateStart          = 0;      // millis() when current LED state was set
+    unsigned long _ledLastPoll            = 0;      // millis() of last 1-second LED reconciliation
 
     // internal options
     
@@ -727,6 +784,11 @@ protected:
     bool          saveWiFiCredentials(String ssid, String pass); // persist credentials only on success
     String        getProvisioningStateStr();                   // convert _provisioningState to string for /status JSON
     String        getProvisioningFailureReason(uint8_t status); // map WL status to human-readable string
+
+    // LED state helpers
+    void          setLEDState(wm_ledstate_t state); // set LED state and invoke callback
+    void          checkLEDTimeout();                // turn LED off when per-state timeout elapses
+    void          syncLEDState();                   // call from loop(): check timeout + reconcile with WiFi status every 1 s
 
     // webserver handlers
 public:
